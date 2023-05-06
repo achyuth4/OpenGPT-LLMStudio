@@ -117,9 +117,8 @@ class Model(nn.Module):
         self.loss_fn = self.cfg.training.loss_class.get(self.cfg.training.loss_function)
 
     def generate(self, batch: Dict, cfg: Any):
-        pad_token_id = (
-            self.backbone.config.pad_token_id or self.backbone.config.eos_token_id
-        )
+        pad_token_id = cfg._tokenizer_pad_token_id
+        print("PAD", pad_token_id)
 
         batch = batch_padding(
             self.cfg,
@@ -149,7 +148,8 @@ class Model(nn.Module):
         output = generation_function(
             inputs=batch["prompt_input_ids"],
             attention_mask=batch["prompt_attention_mask"],
-            pad_token_id=pad_token_id,
+            pad_token_id=cfg._tokenizer_pad_token_id,
+            eos_token_id=cfg._tokenizer_eos_token_id,
             min_new_tokens=cfg.prediction.min_length_inference,
             max_new_tokens=cfg.prediction.max_length_inference,
             do_sample=cfg.prediction.do_sample,
@@ -164,7 +164,7 @@ class Model(nn.Module):
         transformers_logging.set_verbosity(verbosity)
 
         # Mask the prompt tokens
-        output[:, : batch["prompt_input_ids"].shape[1]] = pad_token_id
+        output[:, : batch["prompt_input_ids"].shape[1]] = cfg._tokenizer_pad_token_id
 
         return output
 
@@ -174,6 +174,8 @@ class Model(nn.Module):
         calculate_loss: bool = True,
     ) -> Dict:
         outputs: Dict = {}
+
+        batch["attention_mask"][:] = 1
 
         # model's forward only works with labels
         if "labels" in batch:

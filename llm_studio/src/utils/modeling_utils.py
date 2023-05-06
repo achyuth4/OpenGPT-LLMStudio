@@ -459,6 +459,15 @@ def prepare_model_for_lora_training(model, layer_norm_names=("layer_norm",)):
     return model
 
 
+def overwrite_model_config(cfg, config):
+
+    if cfg.llm_backbone.startswith("mosaicml/mpt"):
+        #config.attn_config['attn_impl'] = 'triton'
+        config.init_device = cfg.environment._device
+
+    return config
+
+
 def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
     """
     Creates a backbone model for NLP tasks.
@@ -469,6 +478,8 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
     )
     config.hidden_dropout_prob = cfg.architecture.intermediate_dropout
     config.attention_probs_dropout_prob = cfg.architecture.intermediate_dropout
+
+    config = overwrite_model_config(cfg, config)
 
     quantization_config = None
     if cfg.architecture.backbone_dtype == "int8":

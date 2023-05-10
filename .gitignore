@@ -1,6 +1,5 @@
 # Folder
 input/
-notebooks/
 demo_data/
 output/
 output_old/
@@ -28,6 +27,9 @@ __pycache__/
 # C extensions
 *.so
 *.c
+
+*.zip
+*model.mlflow*
 
 # Distribution / packaging
 .Python

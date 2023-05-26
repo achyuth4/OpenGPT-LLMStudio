@@ -6,11 +6,6 @@ from typing import Any, Callable, Dict, Tuple
 
 import coolname
 import torch
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    FullyShardedDataParallel,
-    MixedPrecision,
-)
-from torch.nn.parallel import DistributedDataParallel
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, BitsAndBytesConfig
 
@@ -129,41 +124,6 @@ def load_checkpoint(
         logger.info(f"Weights loaded from: {weights_path}")
 
 
-def wrap_model_distributed(model: torch.nn.Module, cfg: Any, fsdp: bool):
-    if fsdp:
-        auto_wrap_policy = None
-
-        mixed_precision_policy = None
-        dtype = None
-        if cfg.environment.mixed_precision:
-            dtype = torch.float16
-        if dtype is not None:
-            mixed_precision_policy = MixedPrecision(
-                param_dtype=dtype, reduce_dtype=dtype, buffer_dtype=dtype
-            )
-        model = FullyShardedDataParallel(
-            model,
-            # sharding_strategy=ShardingStrategy.SHARD_GRAD_OP,
-            # cpu_offload=CPUOffload(offload_params=True),
-            auto_wrap_policy=auto_wrap_policy,
-            mixed_precision=mixed_precision_policy,
-            device_id=cfg.environment._local_rank,
-            # use_orig_params=False
-            limit_all_gathers=True,
-        )
-    else:
-        find_unused_parameters = cfg.environment.find_unused_parameters
-        if getattr(cfg.architecture, "gradient_checkpointing", None):
-            find_unused_parameters = False
-        model = DistributedDataParallel(
-            model,
-            device_ids=[cfg.environment._local_rank],
-            find_unused_parameters=find_unused_parameters,
-        )
-
-    return model
-
-
 def get_optimizer(model: torch.nn.Module, cfg: Any) -> torch.optim.Optimizer:
     """Prepares Optimizer.
 
@@ -277,10 +237,6 @@ def compute_metric(
 
     Returns:
         val_metric: single number score (using config threshold for threshold metrics)
-        full_val_metric: for threshold metrics return dictionary where keys are
-            different thresholds, values are metric scores, for regular metrics
-            just return the metric score (same as val_metric)
-
     """
     try:
         full_val_metric = metric_func(cfg=cfg, results=data, val_df=df)
@@ -299,7 +255,7 @@ def compute_metric(
     else:
         val_metric = full_val_metric
 
-    return val_metric, full_val_metric
+    return val_metric
 
 
 def get_number_of_validation_epochs(training_epochs: int, evaluation_epochs: float):

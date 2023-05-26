@@ -265,20 +265,6 @@ def get_number_of_validation_epochs(training_epochs: int, evaluation_epochs: flo
     return training_epochs // evaluation_epochs
 
 
-def contains_nan(output: Dict):
-    return (
-        sum(
-            [
-                1
-                for key, val in output.items()
-                if isinstance(val, torch.Tensor)
-                and torch.isnan(val.detach().cpu()).sum() > 0
-            ]
-        )
-        > 0
-    )
-
-
 def run_inference(
     cfg: Any,
     accelerator: Accelerator,

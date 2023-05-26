@@ -24,6 +24,7 @@ from accelerate import (
     DistributedDataParallelKwargs,
     DistributedType,
     InitProcessGroupKwargs,
+    FullyShardedDataParallelPlugin,
 )
 from tqdm import tqdm
 
@@ -394,6 +395,10 @@ def run(cfg: Any) -> None:
     init_process_kwargs = InitProcessGroupKwargs(
         backend="nccl", init_method="env://", timeout=timedelta(seconds=800)
     )
+    if cfg.environment.use_fsdp:
+        fsdp_plugin = FullyShardedDataParallelPlugin()
+    else:
+        fsdp_plugin = None
 
     if cfg.environment.mixed_precision:
         mixed_precision = "fp16"
@@ -401,6 +406,7 @@ def run(cfg: Any) -> None:
         mixed_precision = "no"
 
     accelerator = Accelerator(
+        fsdp_plugin=fsdp_plugin,
         mixed_precision=mixed_precision,  # ["no", "fp16", "bf16", "fp8"]
         gradient_accumulation_steps=cfg.training.grad_accumulation,
         kwargs_handlers=[ddp_kwargs, init_process_kwargs],

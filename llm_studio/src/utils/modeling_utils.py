@@ -8,6 +8,7 @@ import coolname
 import torch
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, BitsAndBytesConfig
+from accelerate import Accelerator
 
 from llm_studio.src.optimizers import Optimizers
 from llm_studio.src.schedulers import Schedulers
@@ -23,15 +24,6 @@ from llm_studio.src.utils.utils import save_pickle
 logger = logging.getLogger(__name__)
 
 
-def unwrap_model(model: torch.nn.Module):
-    options = (torch.nn.parallel.DistributedDataParallel, torch.nn.DataParallel)
-
-    while isinstance(model, options):
-        model = model.module
-
-    return model
-
-
 # TODO: currently not saving optimizer
 def save_checkpoint(model: torch.nn.Module, path: str, cfg: Any):
     """Saves a model checkpoint if the path is provided.
@@ -43,8 +35,6 @@ def save_checkpoint(model: torch.nn.Module, path: str, cfg: Any):
     Returns:
         Dictionary with all the keys to save
     """
-
-    model = unwrap_model(model)
 
     if hasattr(cfg.training, "lora") and cfg.training.lora:
         model.backbone.save_pretrained(path)
@@ -291,6 +281,7 @@ def contains_nan(output: Dict):
 
 def run_inference(
     cfg: Any,
+    accelerator: Accelerator,
     model: torch.nn.Module,
     dataloader: torch.utils.data.DataLoader,
     mode: str,
@@ -338,17 +329,7 @@ def run_inference(
         batch = cfg.dataset.dataset_class.batch_to_device(data, cfg.environment._device)
 
         calculate_loss = True
-        if cfg.environment.mixed_precision:
-            with torch.cuda.amp.autocast():
-                output = model.forward(batch, calculate_loss=calculate_loss)
-            if contains_nan(output):
-                raise LLMModelException(
-                    "NaN caught during mixed precision inference. "
-                    "Please disable mixed precision inference. "
-                    "Alternatively, reducing learning rate or "
-                    "gradient clipping may help to stabilize training."
-                )
-        else:
+        with accelerator.autocast():
             output = model.forward(batch, calculate_loss=calculate_loss)
 
         output = dataloader.dataset.postprocess_batch_predictions(  # type: ignore

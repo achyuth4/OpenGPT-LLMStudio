@@ -67,6 +67,7 @@ logger = logging.getLogger(__name__)
 
 def run_eval(
     cfg,
+    accelerator: Accelerator,
     model: torch.nn.Module,
     val_dataloader: torch.utils.data.DataLoader,
     val_df: pd.DataFrame,
@@ -89,7 +90,7 @@ def run_eval(
     with torch.no_grad():
         model.eval()
         val_data: Dict[str, Any] = run_inference(
-            cfg, model, val_dataloader, mode
+            cfg, accelerator, model, val_dataloader, mode
         )  # type: ignore
 
     # Sync validation predictions across GPUs
@@ -140,8 +141,7 @@ def run_eval(
 
         save_predictions(cfg, val_data, val_dataloader, val_df, mode)
 
-    if cfg.environment._distributed:
-        torch.distributed.barrier()
+    accelerator.wait_for_everyone()
 
     torch.inference_mode(mode=False)
 
@@ -207,7 +207,7 @@ def run_train_and_val(
     batch = None
     if cfg.training.evaluate_before_training:
         val_loss, val_metric = run_eval(
-            cfg=cfg, model=model, val_dataloader=val_dataloader, val_df=val_df
+            cfg=cfg, accelerator=accelerator, model=model, val_dataloader=val_dataloader, val_df=val_df
         )
 
     for epoch in range(start_epoch, cfg.training.epochs):
@@ -261,7 +261,9 @@ def run_train_and_val(
                 log_plot(cfg, plot, "train_data")
 
             # Forward pass
-            output_dict = model.forward(batch)
+            with accelerator.accumulate(model):
+                with accelerator.autocast():
+                    output_dict = model.forward(batch)
 
             loss = output_dict["loss"]
             if ~np.isfinite(loss.item()) and (num_updates > 20):
@@ -328,7 +330,7 @@ def run_train_and_val(
                     progress_bar.close()
 
                 val_loss, val_metric = run_eval(
-                    cfg=cfg, model=model, val_dataloader=val_dataloader, val_df=val_df
+                    cfg=cfg, accelerator=accelerator, model=model, val_dataloader=val_dataloader, val_df=val_df
                 )
                 if cfg.environment._local_rank == 0:
                     if (
@@ -352,17 +354,14 @@ def run_train_and_val(
             progress_bar.close()
             del progress_bar
 
-        if cfg.environment._distributed:
-            torch.cuda.synchronize(device=cfg.environment._local_rank)
-            torch.distributed.barrier()
+        accelerator.wait_for_everyone()
 
         if cfg.environment._local_rank == 0:
             cfg.logging._logger.log(
                 "internal", "epoch", epoch + 1, step=cfg.environment._curr_step
             )
 
-    if cfg.environment._distributed:
-        torch.distributed.barrier()
+    accelerator.wait_for_everyone()
 
     return val_loss, val_metric
 
@@ -536,6 +535,9 @@ def run(cfg: Any) -> None:
         val_dataloader=val_dataloader,
         val_df=val_df,
     )
+
+    # Unwrap model
+    model = accelerator.unwrap_model(model)
 
     # reset external logging
     if cfg.environment._local_rank == 0:

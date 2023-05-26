@@ -171,19 +171,18 @@ def run_train_and_val(
         Validation metric
     """
 
-    epoch_steps = len(train_dataloader)
-
     model = accelerator.prepare(model)
 
     # Prepare optimizer and scheduler after preparing the model
     # https://huggingface.co/docs/accelerate/usage_guides/fsdp#a-few-caveats-to-be-aware-of
     optimizer = get_optimizer(model=model, cfg=cfg)
-    scheduler = get_scheduler(cfg=cfg, optimizer=optimizer, epoch_steps=epoch_steps)
+    scheduler = get_scheduler(cfg=cfg, optimizer=optimizer, epoch_steps=len(train_dataloader))
 
     # Prepare everything for training
     model, optimizer, train_dataloader, val_dataloader, scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, val_dataloader, scheduler
     )
+    epoch_steps = len(train_dataloader)
 
     optimizer.zero_grad(set_to_none=True)
 
@@ -219,16 +218,6 @@ def run_train_and_val(
         )
         if cfg.environment._local_rank == 0:
             logger.info(f"Training Epoch: {epoch + 1} / {cfg.training.epochs}")
-            if cfg.training.evaluation_epochs != 1:
-                logger.info(
-                    "Training progress bar is not "
-                    "displayed (evaluation epoch is not set to 1)"
-                )
-
-        if cfg.environment._distributed and hasattr(
-            train_dataloader.sampler, "set_epoch"
-        ):
-            train_dataloader.sampler.set_epoch(epoch)  # type: ignore
 
         if cfg.training.evaluation_epochs == 1:
             tqdm_out = TqdmToLogger(logger, level=logging.INFO)
@@ -240,21 +229,22 @@ def run_train_and_val(
                 desc="train loss",
                 mininterval=0,
             )
-        tr_it = iter(train_dataloader)
+        else:
+            logger.info(
+                "Training progress bar is not "
+                "displayed (evaluation epoch is not set to 1)"
+            )
 
         losses = []
         model.train()
 
         log_update_steps = max(epoch_steps // 20, 1)
         evaluation_step = int(epoch_steps * cfg.training.evaluation_epochs)
-        for itr in range(epoch_steps):
+        for itr, data in enumerate(train_dataloader):
             num_updates += 1
             cfg.environment._curr_step += (
                 cfg.training.batch_size * cfg.environment._world_size
             )
-
-            # Get batch
-            data = next(tr_it)
 
             # Batch to device
             batch = cfg.dataset.dataset_class.batch_to_device(
@@ -467,7 +457,6 @@ def run(cfg: Any) -> None:
             cfg.training.epochs
             * len(train_dataloader)
             * cfg.training.batch_size
-            * cfg.environment._world_size
         )
 
         num_eval_epochs = get_number_of_validation_epochs(
@@ -480,7 +469,6 @@ def run(cfg: Any) -> None:
             len(val_dataloader)
             * (num_eval_epochs + int(cfg.training.evaluate_before_training))
             * val_batch_size
-            * cfg.environment._world_size
         )
 
     # Prepare model

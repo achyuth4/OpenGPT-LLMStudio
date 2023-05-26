@@ -93,7 +93,7 @@ def run_eval(
         )  # type: ignore
 
     # Sync validation predictions across GPUs
-    if cfg.environment._distributed and cfg.environment._distributed_inference:
+    if cfg.environment._distributed:
         for key, value in val_data.items():
             val_data[key] = sync_across_processes(
                 value, cfg.environment._world_size, group=cfg.environment._cpu_comm
@@ -422,6 +422,7 @@ def run(cfg: Any) -> None:
     cfg.environment._device = accelerator.device
     cfg.environment._distributed = accelerator.distributed_type
     cfg.environment._device = accelerator.device
+    cfg.environment._world_size = accelerator.num_processes
 
     if cfg.environment._distributed != DistributedType.NO:
         logger.info(

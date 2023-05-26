@@ -311,7 +311,6 @@ class ConfigNLPCausalLMEnvironment(DefaultConfig):
 
     _seed: int = 0  # internal seed set in train.py (equals seed if seed is not -1)
     _distributed: bool = False
-    _distributed_inference: bool = True
     _local_rank: int = 0
     _world_size: int = 1
     _curr_step: int = 0

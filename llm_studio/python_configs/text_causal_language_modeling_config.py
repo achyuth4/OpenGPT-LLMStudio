@@ -392,6 +392,8 @@ class ConfigProblemBase(DefaultConfig):
                 "h2oai/h2ogpt-oig-oasst1-512-6.9b",
                 "h2oai/h2ogpt-oasst1-512-20b",
                 "h2oai/h2ogpt-gm-oasst1-en-1024-12b",
+                "openlm-research/open_llama_3b_600bt_preview",
+                "openlm-research/open_llama_7b_700bt_preview",
                 "EleutherAI/gpt-neo-1.3B",
                 "EleutherAI/gpt-j-6B",
                 "EleutherAI/gpt-neox-20b",

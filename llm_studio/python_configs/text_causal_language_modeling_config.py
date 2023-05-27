@@ -303,6 +303,7 @@ class ConfigNLPCausalLMEnvironment(DefaultConfig):
 
     compile_model: bool = False
     use_fsdp: bool = False
+    use_deepspeed: bool = False
 
     find_unused_parameters: bool = False
     trust_remote_code: bool = False
@@ -330,6 +331,8 @@ class ConfigNLPCausalLMEnvironment(DefaultConfig):
 
         self._possible_values["number_of_workers"] = (1, multiprocessing.cpu_count(), 1)
         self._possible_values["seed"] = possible_values.Number(step=1, min=-1)
+
+        self._visibility["use_deepspeed"] = -1
 
 
 @dataclass

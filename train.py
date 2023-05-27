@@ -23,8 +23,12 @@ from accelerate import (
     Accelerator,
     DistributedDataParallelKwargs,
     DistributedType,
-    InitProcessGroupKwargs,
     FullyShardedDataParallelPlugin,
+    InitProcessGroupKwargs,
+)
+from torch.distributed.fsdp.fully_sharded_data_parallel import (
+    CPUOffload,
+    MixedPrecision,
 )
 from tqdm import tqdm
 
@@ -177,7 +181,9 @@ def run_train_and_val(
     # Prepare optimizer and scheduler after preparing the model
     # https://huggingface.co/docs/accelerate/usage_guides/fsdp#a-few-caveats-to-be-aware-of
     optimizer = get_optimizer(model=model, cfg=cfg)
-    scheduler = get_scheduler(cfg=cfg, optimizer=optimizer, epoch_steps=len(train_dataloader))
+    scheduler = get_scheduler(
+        cfg=cfg, optimizer=optimizer, epoch_steps=len(train_dataloader)
+    )
 
     # Prepare everything for training
     model, optimizer, train_dataloader, val_dataloader, scheduler = accelerator.prepare(
@@ -208,7 +214,11 @@ def run_train_and_val(
     batch = None
     if cfg.training.evaluate_before_training:
         val_loss, val_metric = run_eval(
-            cfg=cfg, accelerator=accelerator, model=model, val_dataloader=val_dataloader, val_df=val_df
+            cfg=cfg,
+            accelerator=accelerator,
+            model=model,
+            val_dataloader=val_dataloader,
+            val_df=val_df,
         )
 
     for epoch in range(start_epoch, cfg.training.epochs):
@@ -331,7 +341,11 @@ def run_train_and_val(
                     progress_bar.close()
 
                 val_loss, val_metric = run_eval(
-                    cfg=cfg, accelerator=accelerator, model=model, val_dataloader=val_dataloader, val_df=val_df
+                    cfg=cfg,
+                    accelerator=accelerator,
+                    model=model,
+                    val_dataloader=val_dataloader,
+                    val_df=val_df,
                 )
                 if cfg.environment._local_rank == 0:
                     if (
@@ -396,9 +410,22 @@ def run(cfg: Any) -> None:
         backend="nccl", init_method="env://", timeout=timedelta(seconds=800)
     )
     if cfg.environment.use_fsdp:
-        fsdp_plugin = FullyShardedDataParallelPlugin()
+        mixed_precision_policy = MixedPrecision(
+            param_dtype=torch.float16,
+            reduce_dtype=torch.float16,
+            buffer_dtype=torch.float16,
+        )
+        fsdp_plugin = FullyShardedDataParallelPlugin(
+            cpu_offload=CPUOffload(offload_params=True),
+            mixed_precision_policy=mixed_precision_policy,
+        )
     else:
         fsdp_plugin = None
+
+    if cfg.environment.use_deepspeed:
+        deepspeed_plugin = DeepSpeedPlugin()
+    else:
+        deepspeed_plugin = None
 
     if cfg.environment.mixed_precision:
         mixed_precision = "fp16"
@@ -407,6 +434,7 @@ def run(cfg: Any) -> None:
 
     accelerator = Accelerator(
         fsdp_plugin=fsdp_plugin,
+        deepspeed_plugin=deepspeed_plugin,
         mixed_precision=mixed_precision,  # ["no", "fp16", "bf16", "fp8"]
         gradient_accumulation_steps=cfg.training.grad_accumulation,
         kwargs_handlers=[ddp_kwargs, init_process_kwargs],
@@ -459,9 +487,7 @@ def run(cfg: Any) -> None:
 
     if cfg.environment._local_rank == 0:
         total_training_steps = (
-            cfg.training.epochs
-            * len(train_dataloader)
-            * cfg.training.batch_size
+            cfg.training.epochs * len(train_dataloader) * cfg.training.batch_size
         )
 
         num_eval_epochs = get_number_of_validation_epochs(

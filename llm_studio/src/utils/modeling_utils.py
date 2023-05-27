@@ -6,9 +6,9 @@ from typing import Any, Callable, Dict, Tuple
 
 import coolname
 import torch
+from accelerate import Accelerator
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, BitsAndBytesConfig
-from accelerate import Accelerator
 
 from llm_studio.src.optimizers import Optimizers
 from llm_studio.src.schedulers import Schedulers
@@ -417,6 +417,8 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
             config=config,
             trust_remote_code=cfg.environment.trust_remote_code,
             quantization_config=quantization_config,
+            low_cpu_mem_usage=True,
+            device_map="auto",
             **kwargs,
         )
     else:

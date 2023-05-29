@@ -443,6 +443,8 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
         with init_empty_weights():
             backbone = model_class.from_config(config, **kwargs)
 
+    logger.info(backbone)
+
     backbone.tie_weights()
     backbone = load_checkpoint_and_dispatch(
         backbone,

@@ -6,7 +6,8 @@ from typing import Any, Callable, Dict, Tuple
 
 import coolname
 import torch
-from accelerate import Accelerator
+from accelerate import Accelerator, init_empty_weights, load_checkpoint_and_dispatch
+from huggingface_hub import snapshot_download
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, BitsAndBytesConfig
 
@@ -393,9 +394,15 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
     config.hidden_dropout_prob = cfg.architecture.intermediate_dropout
     config.attention_probs_dropout_prob = cfg.architecture.intermediate_dropout
 
+    if cfg.training.use_fsdp or cfg.training.use_deepspeed:
+        # FSDP and DeepSpeed do not support gradient checkpointing
+        # FSDP and DeppSpeed do not support quantization below fp16
+        cfg.architecture.backbone_dtype = "float16"
+        cfg.architecture.gradient_checkpointing = False
+
     quantization_config = None
     if cfg.architecture.backbone_dtype == "int8":
-        kwargs["device_map"] = {"": cfg.environment._device}
+        # kwargs["device_map"] = {"": cfg.environment._device}
         kwargs["torch_dtype"] = torch.float16
         kwargs["load_in_8bit"] = True
         quantization_config = BitsAndBytesConfig(
@@ -412,17 +419,36 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
         config.use_cache = False
 
     if cfg.architecture.pretrained:
-        backbone = model_class.from_pretrained(
-            cfg.llm_backbone,
-            config=config,
-            trust_remote_code=cfg.environment.trust_remote_code,
-            quantization_config=quantization_config,
-            low_cpu_mem_usage=True,
-            device_map="auto",
-            **kwargs,
+        weights_path = snapshot_download(cfg.llm_backbone)
+        files = os.listdir(weights_path)
+        weights_path = (
+            os.path.join(weights_path, "pytorch_model.bin")
+            if "pytorch_model.bin" in files
+            else weights_path
         )
+
+        with init_empty_weights():
+            backbone = model_class.from_config(
+                cfg.llm_backbone,
+                config=config,
+                trust_remote_code=cfg.environment.trust_remote_code,
+                quantization_config=quantization_config,
+                low_cpu_mem_usage=True,
+                device_map="auto",
+                **kwargs,
+            )
     else:
-        backbone = model_class.from_config(config, **kwargs)
+        with init_empty_weights():
+            backbone = model_class.from_config(config, **kwargs)
+
+    backbone.tie_weights()
+    backbone = load_checkpoint_and_dispatch(
+        backbone,
+        weights_path,
+        device_map="auto",
+        # max_memory=max_memory,
+        dtype=cfg.architecture.backbone_dtype,
+    )
 
     if cfg.tokenizer._vocab_length > config.vocab_size:
         logger.info(f"Resizing token embeddings to {cfg.tokenizer._vocab_length}")

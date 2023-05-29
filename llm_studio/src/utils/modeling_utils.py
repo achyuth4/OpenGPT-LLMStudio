@@ -394,7 +394,7 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
     config.hidden_dropout_prob = cfg.architecture.intermediate_dropout
     config.attention_probs_dropout_prob = cfg.architecture.intermediate_dropout
 
-    if cfg.training.use_fsdp or cfg.training.use_deepspeed:
+    if cfg.environment.use_fsdp or cfg.environment.use_deepspeed:
         # FSDP and DeepSpeed do not support gradient checkpointing
         # FSDP and DeppSpeed do not support quantization below fp16
         cfg.architecture.backbone_dtype = "float16"
@@ -419,24 +419,26 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
         config.use_cache = False
 
     if cfg.architecture.pretrained:
-        weights_path = snapshot_download(cfg.llm_backbone)
-        files = os.listdir(weights_path)
-        weights_path = (
-            os.path.join(weights_path, "pytorch_model.bin")
-            if "pytorch_model.bin" in files
-            else weights_path
-        )
+        weights_path = snapshot_download(cfg.llm_backbone, allow_patterns="pytorch_model*")
 
+        free_in_GB = int(min(torch.cuda.mem_get_info()) / 1024 ** 3)
+        max_memory = f"{free_in_GB - 12}GB"
+        max_memory = {int(i): max_memory for i in cfg.environment.gpus}
+        logger.info(max_memory)
+
+        # with init_empty_weights():
+        # backbone = model_class.from_pretrained(
+        #     cfg.llm_backbone,
+        #     config=config,
+        #     trust_remote_code=cfg.environment.trust_remote_code,
+        #     quantization_config=quantization_config,
+        #     max_memory=max_memory,
+        #     low_cpu_mem_usage=True,
+        #     device_map="auto",
+        #     **kwargs,
+        # )
         with init_empty_weights():
-            backbone = model_class.from_config(
-                cfg.llm_backbone,
-                config=config,
-                trust_remote_code=cfg.environment.trust_remote_code,
-                quantization_config=quantization_config,
-                low_cpu_mem_usage=True,
-                device_map="auto",
-                **kwargs,
-            )
+            backbone = model_class.from_config(config, **kwargs)
     else:
         with init_empty_weights():
             backbone = model_class.from_config(config, **kwargs)
@@ -446,7 +448,7 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
         backbone,
         weights_path,
         device_map="auto",
-        # max_memory=max_memory,
+        max_memory=max_memory,
         dtype=cfg.architecture.backbone_dtype,
     )
 

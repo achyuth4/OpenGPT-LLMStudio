@@ -136,9 +136,8 @@ def start_process(
             [
                 "env",
                 f"CUDA_VISIBLE_DEVICES={','.join(gpu_list)}",
-                "torchrun",
-                f"--nproc_per_node={str(num_gpus)}",
-                f"--master_port={str(free_port)}",
+                "accelerate",
+                "launch",
                 "train_wave.py",
                 "-Y",
                 config_name,

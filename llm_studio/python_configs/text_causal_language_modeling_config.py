@@ -332,7 +332,7 @@ class ConfigNLPCausalLMEnvironment(DefaultConfig):
         self._possible_values["number_of_workers"] = (1, multiprocessing.cpu_count(), 1)
         self._possible_values["seed"] = possible_values.Number(step=1, min=-1)
 
-        self._visibility["use_deepspeed"] = -1
+        # self._visibility["use_deepspeed"] = -1
 
 
 @dataclass

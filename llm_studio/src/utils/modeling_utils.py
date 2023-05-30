@@ -422,37 +422,40 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
         weights_path = snapshot_download(cfg.llm_backbone, allow_patterns="pytorch_model*")
 
         free_in_GB = int(min(torch.cuda.mem_get_info()) / 1024 ** 3)
-        max_memory = f"{free_in_GB - 12}GB"
+        max_memory = f"{free_in_GB - 14}GB"
         max_memory = {int(i): max_memory for i in cfg.environment.gpus}
+        max_memory["cpu"] = "110GB"
+        max_memory["nvme"] = "200GB"
         logger.info(max_memory)
 
         # with init_empty_weights():
-        # backbone = model_class.from_pretrained(
-        #     cfg.llm_backbone,
-        #     config=config,
-        #     trust_remote_code=cfg.environment.trust_remote_code,
-        #     quantization_config=quantization_config,
-        #     max_memory=max_memory,
-        #     low_cpu_mem_usage=True,
-        #     device_map="auto",
-        #     **kwargs,
-        # )
-        with init_empty_weights():
-            backbone = model_class.from_config(config, **kwargs)
+        backbone = model_class.from_pretrained(
+            cfg.llm_backbone,
+            config=config,
+            trust_remote_code=cfg.environment.trust_remote_code,
+            quantization_config=quantization_config,
+            max_memory=max_memory,
+            # low_cpu_mem_usage=True,
+            # device_map="auto",
+            **kwargs,
+        )
+        backbone.use_cache = True
+        # with init_empty_weights():
+        #     backbone = model_class.from_config(config, **kwargs)
     else:
         with init_empty_weights():
             backbone = model_class.from_config(config, **kwargs)
 
     logger.info(backbone)
 
-    backbone.tie_weights()
-    backbone = load_checkpoint_and_dispatch(
-        backbone,
-        weights_path,
-        device_map="auto",
-        max_memory=max_memory,
-        dtype=cfg.architecture.backbone_dtype,
-    )
+    # backbone.tie_weights()
+    # backbone = load_checkpoint_and_dispatch(
+    #     backbone,
+    #     weights_path,
+    #     device_map="auto",
+    #     max_memory=max_memory,
+    #     dtype=cfg.architecture.backbone_dtype,
+    # )
 
     if cfg.tokenizer._vocab_length > config.vocab_size:
         logger.info(f"Resizing token embeddings to {cfg.tokenizer._vocab_length}")

@@ -25,7 +25,10 @@ from accelerate import (
     DistributedType,
     FullyShardedDataParallelPlugin,
     InitProcessGroupKwargs,
+    DeepSpeedPlugin,
 )
+from accelerate.utils.deepspeed import HfDeepSpeedConfig
+
 from torch.distributed.fsdp.fully_sharded_data_parallel import (
     CPUOffload,
     MixedPrecision,
@@ -99,7 +102,7 @@ def run_eval(
         )  # type: ignore
 
     # Sync validation predictions across GPUs
-    if cfg.environment._distributed:
+    if cfg.environment._distributed != DistributedType.NO:
         for key, value in val_data.items():
             val_data[key] = sync_across_processes(
                 value, cfg.environment._world_size, group=cfg.environment._cpu_comm
@@ -423,7 +426,27 @@ def run(cfg: Any) -> None:
         fsdp_plugin = None
 
     if cfg.environment.use_deepspeed:
-        deepspeed_plugin = DeepSpeedPlugin()
+        deepspeed_plugin = DeepSpeedPlugin(
+            # hf_ds_config=deepspeed_config,
+            zero_stage=2,
+            gradient_accumulation_steps=cfg.training.grad_accumulation,
+            offload_optimizer_device="cpu",
+            # offload_param_device="cpu",
+            # zero3_init_flag=True,
+            # zero3_save_16bit_model=True,
+        )
+        deepspeed_plugin.deepspeed_config[
+            "train_micro_batch_size_per_gpu"
+        ] = cfg.training.batch_size
+        deepspeed_plugin.deepspeed_config["optimizer"] = {
+            "type": "AdamW",
+            "params": {
+                "lr": cfg.training.learning_rate,
+                "betas": [0.8, 0.999],
+                "eps": 1e-8,
+                "weight_decay": 3e-7,
+            },
+        }
     else:
         deepspeed_plugin = None
 
@@ -444,6 +467,7 @@ def run(cfg: Any) -> None:
     cfg.environment._rank = accelerator.process_index
     cfg.environment._device = accelerator.device
     cfg.environment._distributed = accelerator.distributed_type
+    logger.info(cfg.environment._distributed)
     cfg.environment._device = accelerator.device
     cfg.environment._world_size = accelerator.num_processes
 
@@ -519,7 +543,7 @@ def run(cfg: Any) -> None:
                     param.data = param.data.float()
 
     if cfg.environment.compile_model:
-        if cfg.environment._distributed:
+        if cfg.environment._distributed != DistributedType.NO:
             model.module.backbone = torch.compile(model.module.backbone)
         else:
             model.backbone = torch.compile(model.backbone)

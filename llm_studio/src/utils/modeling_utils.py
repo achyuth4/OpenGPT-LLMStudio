@@ -418,6 +418,7 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
     if cfg.architecture.gradient_checkpointing:
         config.use_cache = False
 
+    kwargs["trust_remote_code"] = cfg.environment.trust_remote_code
     if cfg.architecture.pretrained:
         weights_path = snapshot_download(cfg.llm_backbone, allow_patterns="pytorch_model*")
 
@@ -432,7 +433,6 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
         backbone = model_class.from_pretrained(
             cfg.llm_backbone,
             config=config,
-            trust_remote_code=cfg.environment.trust_remote_code,
             quantization_config=quantization_config,
             max_memory=max_memory,
             # low_cpu_mem_usage=True,

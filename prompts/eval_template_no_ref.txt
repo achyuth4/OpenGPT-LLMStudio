@@ -1,0 +1,6 @@
+[Question]
+{question}
+
+[Start of Assistant Answer]
+{assistant_answer}
+[End of Assistant Answer]

@@ -12,7 +12,7 @@ from llm_studio.src.augmentations.nlp_aug import BaseNLPAug
 from llm_studio.src.loggers import Loggers
 from llm_studio.src.losses import text_causal_language_modeling_losses
 from llm_studio.src.metrics import text_causal_language_modeling_metrics
-from llm_studio.src.models import text_causal_language_modeling_model
+from llm_studio.src.models import text_causal_language_modeling_model, text_reward_model
 from llm_studio.src.nesting import Dependency
 from llm_studio.src.optimizers import Optimizers
 from llm_studio.src.plots import text_causal_language_modeling_plots
@@ -25,6 +25,11 @@ class ConfigNLPCausalLMDataset(DefaultConfig):
     dataset_class: Any = (
         llm_studio.src.datasets.text_causal_language_modeling_ds.CustomDataset
     )
+
+    personalize: bool = False
+    chatbot_name: str = "h2oGPT"
+    chatbot_author: str = "H2O.ai"
+
     train_dataframe: str = "/path/to/train.csv"
     validation_strategy: str = "automatic"
     validation_dataframe: str = ""
@@ -81,6 +86,11 @@ class ConfigNLPCausalLMDataset(DefaultConfig):
         )
         self._possible_values["parent_id_column"] = possible_values.Columns(
             prefer_with=lambda column: column in ("parent",), add_none=True
+        )
+
+        self._nesting.add(
+            ["chatbot_name", "chatbot_author"],
+            [Dependency(key="personalize", value=True, is_set=True)],
         )
 
         self._nesting.add(
@@ -209,7 +219,6 @@ class ConfigNLPCausalLMTraining(DefaultConfig):
         self._possible_values["ppo_generate_temperature"] = (0.1, 1.0, 0.1)
         self._possible_values["ppo_batch_size"] = (1, 1024, 1)
 
-        self._visibility["lora"] = -1
         self._visibility["loss_class"] = -1
         self._visibility["drop_last_batch"] = -1
         self._visibility["differential_learning_rate_layers"] = 1
@@ -248,11 +257,20 @@ class ConfigNLPCausalLMTraining(DefaultConfig):
                 "advantages_lambda",
                 "ppo_clip_policy",
                 "ppo_clip_value",
+                "ppo_generate_temperature",
                 "scaling_factor_value_loss",
                 "ppo_epochs",
                 "ppo_batch_size",
+                "offload_reward_model",
             ],
             [Dependency(key="use_rlhf", value=False, is_set=False)],
+        )
+        self._nesting.add(
+            [
+                "gradient_clip",
+                "grad_accumulation",
+            ],
+            [Dependency(key="use_rlhf", value=True, is_set=False)],
         )
 
 
@@ -280,11 +298,11 @@ class ConfigNLPCausalLMTokenizer(DefaultConfig):
 @dataclass
 class ConfigNLPCausalLMArchitecture(DefaultConfig):
     model_class: Any = text_causal_language_modeling_model.Model
-    reward_model_class: Any = text_causal_language_modeling_model.RewardModel
+    reward_model_class: Any = text_reward_model.RewardModel
     pretrained: bool = True
 
     backbone_dtype: str = "float16"
-    gradient_checkpointing: bool = True
+    gradient_checkpointing: bool = False
     force_embedding_gradients: bool = False
     intermediate_dropout: float = 0
     pretrained_weights: str = ""

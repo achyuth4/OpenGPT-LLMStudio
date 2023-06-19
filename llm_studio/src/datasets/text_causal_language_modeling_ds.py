@@ -159,6 +159,39 @@ class CustomDataset(Dataset):
             the processed dataframe
         """
 
+        def personalize(text):
+            text = text.replace("Open Assistant", cfg.dataset.chatbot_name)
+            text = text.replace("Open-Assistant", cfg.dataset.chatbot_name)
+            text = text.replace("open-assistant", cfg.dataset.chatbot_name)
+            text = text.replace("OpenAssistant", cfg.dataset.chatbot_name)
+            text = text.replace("open assistant", cfg.dataset.chatbot_name)
+            text = text.replace("Open Assistand", cfg.dataset.chatbot_name)
+            text = text.replace("Open Assitant", cfg.dataset.chatbot_name)
+            text = text.replace("Open Assistent", cfg.dataset.chatbot_name)
+            text = text.replace("Open Assisstant", cfg.dataset.chatbot_name)
+            text = text.replace("Open Assitent", cfg.dataset.chatbot_name)
+            text = text.replace("Open Assitiant", cfg.dataset.chatbot_name)
+            text = text.replace("Open Assistiant", cfg.dataset.chatbot_name)
+            text = text.replace("Open Assitan ", cfg.dataset.chatbot_name + " ")
+            text = text.replace("Open Assistan ", cfg.dataset.chatbot_name + " ")
+            text = text.replace("Open Asistant", cfg.dataset.chatbot_name)
+            text = text.replace("Open Assiant", cfg.dataset.chatbot_name)
+            text = text.replace("Assistant", cfg.dataset.chatbot_name)
+            text = text.replace("LAION AI", cfg.dataset.chatbot_author)
+            text = text.replace("LAION-AI", cfg.dataset.chatbot_author)
+            text = text.replace("LAION,", cfg.dataset.chatbot_author + ",")
+            text = text.replace("LAION.ai", cfg.dataset.chatbot_author)
+            text = text.replace("LAION.", cfg.dataset.chatbot_author + ".")
+            text = text.replace("LAION", cfg.dataset.chatbot_author)
+            return text
+
+        if cfg.dataset.personalize:
+            for prompt_col in cfg.dataset.prompt_column:
+                df[prompt_col] = df[prompt_col].apply(personalize)
+            df[cfg.dataset.answer_column] = df[cfg.dataset.answer_column].apply(
+                personalize
+            )
+
         return df
 
     def get_train_collate_fn(self):
@@ -178,6 +211,9 @@ class CustomDataset(Dataset):
         return None
 
     def postprocess_batch_predictions(self, cfg: Any, output: Dict) -> Dict:
+        if cfg.prediction.metric == "Perplexity":
+            return output
+
         predicted_text = [
             self.tokenizer.decode(ids, skip_special_tokens=True).strip()
             for ids in output["predicted_answer_ids"]
@@ -208,35 +244,28 @@ class CustomDataset(Dataset):
         return output
 
     def postprocess_output(self, cfg, df: pd.DataFrame, output: Dict) -> Dict:
-        output = self.clean_output(output, self.prompts, cfg)
+        if not cfg.prediction.metric == "Perplexity":
+            output = self.clean_output(output, self.prompts, cfg)
 
         output["target_text"] = self.answers
-        metric_func, _ = cfg.prediction.metric_class.get(cfg.prediction.metric)
-        predictions = output["predicted_text"]
-        labels = output["target_text"]
-        assert len(predictions) == len(labels)
 
-        metrics = []
+        metric_func, _, _ = cfg.prediction.metric_class.get(cfg.prediction.metric)
 
         if "GPT" in cfg.prediction.metric:
             metrics, explanations = metric_func(
                 cfg,
-                {"predicted_text": predictions, "target_text": labels},
+                output,
                 df,
                 raw_results=True,
             )
             output["explanations"] = explanations
         else:
-            for i in range(len(labels)):
-                label = [labels[i]]
-                prediction = [predictions[i]]
-                act_metric = metric_func(
-                    cfg,
-                    {"predicted_text": prediction, "target_text": label},
-                    df.iloc[i : i + 1],
-                )
-                metrics.append(act_metric)
-        output["metrics"] = torch.tensor(metrics)
+            metrics = metric_func(
+                cfg,
+                output,
+                df,
+            )
+        output["metrics"] = metrics
 
         return output
 
@@ -251,14 +280,17 @@ class CustomDataset(Dataset):
 
         output.pop("target_text", None)
 
-        output["predicted_text"] = np.array(output["predicted_text"])
+        if "predicted_text" in output.keys():
+            output["predicted_text"] = np.array(output["predicted_text"])
 
         if isinstance(cfg.dataset.prompt_column, tuple):
             for col in cfg.dataset.prompt_column:
                 output[col] = df[col].values
         else:
             output[cfg.dataset.prompt_column] = df[cfg.dataset.prompt_column].values
-        df[f"pred_{cfg.dataset.answer_column}"] = output["predicted_text"]
+
+        if "predicted_text" in output.keys():
+            df[f"pred_{cfg.dataset.answer_column}"] = output["predicted_text"]
 
         return output, df
 
@@ -302,15 +334,16 @@ class CustomDataset(Dataset):
                 dim=0,
             )
 
-        if self.cfg.training.use_rlhf and self.mode == "train":
-            return [prompt_encodings]
-        else:
-            return [prompt_encodings, answer_encodings]
+        return [prompt_encodings, answer_encodings]
 
     def _read_data(self, idx: int, sample: Dict) -> Dict:
         """Reads a single text observation."""
 
-        samples = [self._get_sample(idx)]
+        if self.cfg.training.use_rlhf and self.mode == "train":
+            samples = [[self._get_sample(idx)[0]]]
+        else:
+            samples = [self._get_sample(idx)]
+
         sample["reward_model_prompt_text"] = self.raw_prompts[idx]
 
         if self.parent_ids is not None:
@@ -327,7 +360,7 @@ class CustomDataset(Dataset):
                 samples.insert(0, self._get_sample(int(parent_idx)))
                 sample["reward_model_prompt_text"] = (
                     self.raw_prompts[int(parent_idx)]
-                    + "<|endoftext|>"
+                    + "<|endoftext|>"  # this is replaced later in the pipeline
                     + sample["reward_model_prompt_text"]
                 )
 
@@ -353,19 +386,20 @@ class CustomDataset(Dataset):
             ).to(torch.bool)
         attention_mask = torch.ones_like(input_ids)
 
-        labels = input_ids.clone()
+        if not self.cfg.training.use_rlhf and self.mode == "train":
+            labels = input_ids.clone()
 
-        if self.cfg.dataset.mask_prompt_labels:
-            labels.masked_fill_(prompt_mask, -100)
-        if self.cfg.dataset.add_eos_token_to_answer:
-            # eos_token may be equal to pad_token. Add the label back manually.
-            labels[-1] = self.tokenizer.eos_token_id
+            if self.cfg.dataset.mask_prompt_labels:
+                labels.masked_fill_(prompt_mask, -100)
+            if self.cfg.dataset.add_eos_token_to_answer:
+                # eos_token may be equal to pad_token. Add the label back manually.
+                labels[-1] = self.tokenizer.eos_token_id
 
-        if self.cfg.tokenizer.max_length < len(input_ids):
-            labels = labels[-self.cfg.tokenizer.max_length :]
+            if self.cfg.tokenizer.max_length < len(input_ids):
+                labels = labels[-self.cfg.tokenizer.max_length :]
 
-        sample["labels"] = torch.full((self.cfg.tokenizer.max_length,), -100)
-        sample["labels"][-len(labels) :] = labels
+            sample["labels"] = torch.full((self.cfg.tokenizer.max_length,), -100)
+            sample["labels"][-len(labels) :] = labels
 
         sample.update(
             self.pad_tokens(

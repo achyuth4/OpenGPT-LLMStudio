@@ -75,15 +75,6 @@ def logprobs_from_logits(logits, labels):
     return logpy
 
 
-def whiten(values, shift_mean=True):
-    """Whiten values."""
-    mean, var = torch.mean(values), torch.var(values)
-    whitened = (values - mean) * torch.rsqrt(var + 1e-8)
-    if not shift_mean:
-        whitened += mean
-    return whitened
-
-
 def masked_mean(values, mask, axis=None):
     """Compute mean of tensor with a masked values."""
     if axis is not None:
@@ -344,7 +335,6 @@ class PPOTrainer(PyTorchModelHubMixin):
                     responses,
                     model_inputs,
                     return_values=False,
-                    is_ref_model=True,
                 )
 
         timing["time/ppo/forward_pass"] = time.time() - t
@@ -477,7 +467,6 @@ class PPOTrainer(PyTorchModelHubMixin):
         model_inputs: dict,
         return_logits: bool = False,
         return_values: bool = True,
-        is_ref_model: bool = False,
     ):
         """
         Calculate model outputs in multiple batches.
@@ -495,9 +484,6 @@ class PPOTrainer(PyTorchModelHubMixin):
             return_values (`bool`, *optional*, defaults to `True`):
                 Whether to return values. Set to `False` if values are not needed to
                 reduce memory consumption.
-            is_ref_model (`bool`, *optional*, defaults to `False`):
-                Whether the model is a reference model. If `False`, the model will
-                not return the values or loss.
         Returns:
             (tuple):
                 - all_logprobs (`torch.FloatTensor`): Log probabilities of the
@@ -530,7 +516,9 @@ class PPOTrainer(PyTorchModelHubMixin):
 
             with autocast(enabled=self.cfg.environment.mixed_precision):
                 outputs = model(
-                    model_inputs_batch, padding=False, is_ref_model=is_ref_model
+                    model_inputs_batch,
+                    padding=False,
+                    generate=False,
                 )
 
             logits = outputs["logits"]

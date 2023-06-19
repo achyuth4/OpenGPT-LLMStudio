@@ -177,66 +177,6 @@ class RewardModel(nn.Module):
 
         self.cfg = cfg
         self.model_name = cfg.training.reward_model
-        self.device = cfg.environment._device
-        self.model = AutoModelForSequenceClassification.from_pretrained(
-            self.model_name,
-            torch_dtype=torch.float16,
-        ).to(self.device)
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name, max_model_input_sizes=2048
-        )
-
-    def get_score(
-        self,
-        prompts=None,
-        answers=None,
-    ):
-        scores = []
-        for prompt, answer in zip(prompts, answers):
-            if self.model_name == "OpenAssistant/reward-model-deberta-v3-large-v2":
-                inputs = self.tokenizer(
-                    " ".join(prompt.split("<|endoftext|>")),
-                    answer,
-                    return_tensors="pt",
-                    max_length=2048,
-                ).to(self.device)
-            elif self.model_name in [
-                "OpenAssistant/oasst-rm-2.1-pythia-1.4b-epoch-2.5",
-                "OpenAssistant/oasst-rm-2-pythia-6.9b-epoch-1",
-            ]:
-                prompt = prompt.split("<|endoftext|>")
-
-                input_text = ""
-
-                for i, prompt_part in enumerate(prompt[::-1]):
-                    if i % 2 == 0:
-                        prefix = "<|prompter|>"
-                    else:
-                        prefix = "<|assistant|>"
-                    input_text = f"{prefix}{prompt_part}<|endoftext|>" + input_text
-
-                input_text = input_text + f"<|assistant|>{answer}<|endoftext|>"
-
-                inputs = self.tokenizer(
-                    input_text, return_tensors="pt", max_length=2048
-                ).to(self.device)
-
-            scores.append(self.model(**inputs).logits[0].cpu().detach().item())
-            del inputs
-        return scores
-
-
-class RewardModel(nn.Module):
-    def __init__(self, cfg):
-        super(RewardModel, self).__init__()
-
-        AutoConfig.register("gpt_neox_reward_model", GPTNeoXRewardModelConfig)
-        AutoModelForSequenceClassification.register(
-            GPTNeoXRewardModelConfig, GPTNeoXRewardModel
-        )
-
-        self.cfg = cfg
-        self.model_name = cfg.training.reward_model
 
         if not self.model_name == "GPT3.5" and not self.model_name == "GPT4":
             self.device = cfg.environment._device

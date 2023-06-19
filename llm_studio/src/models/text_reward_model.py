@@ -203,7 +203,15 @@ class RewardModel(nn.Module):
                     model="gpt-3.5-turbo",
                 )
                 scores.append(score)
-
+        elif self.model_name == "GPT4":
+            scores = []
+            for prompt, answer in zip(prompts, answers):
+                score, _ = rate_reply(
+                    question=prompt,
+                    assistant_answer=answer,
+                    model="gpt-4",
+                )
+                scores.append(score)
         else:
             scores = []
             for prompt, answer in zip(prompts, answers):

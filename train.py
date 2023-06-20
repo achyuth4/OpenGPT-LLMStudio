@@ -56,6 +56,7 @@ from llm_studio.src.utils.modeling_utils import (
     run_inference,
     save_checkpoint,
     save_predictions,
+    unwrap_model,
     wrap_model_distributed,
 )
 from llm_studio.src.utils.utils import kill_ddp_processes, set_environment, set_seed
@@ -214,6 +215,7 @@ def run_train(
             tokenizer=tokenizer,
             optimizer=optimizer,
             lr_scheduler=scheduler,
+            scaler=scaler,
         )
 
     for epoch in range(start_epoch, cfg.training.epochs):
@@ -273,9 +275,11 @@ def run_train(
                 with torch.no_grad():
                     logger.debug("Rollout: Generating response from active model")
                     output_dict = {}
-                    output_dict["predicted_answer_ids"] = model.generate(
-                        batch, model.cfg, remove_prompt=True
-                    ).detach()
+                    output_dict["predicted_answer_ids"] = (
+                        unwrap_model(model)
+                        .generate(batch, unwrap_model(model).cfg, remove_prompt=True)
+                        .detach()
+                    )
                     output_dict = (
                         train_dataloader.dataset.postprocess_batch_predictions(
                             cfg=cfg, output=output_dict
@@ -308,8 +312,8 @@ def run_train(
                     )
                 ]
                 pad_tok_id = (
-                    model.backbone.config.pad_token_id
-                    or model.backbone.config.eos_token_id
+                    unwrap_model(model).backbone.config.pad_token_id
+                    or unwrap_model(model).backbone.config.eos_token_id
                 )
                 output_dict["predicted_answer_ids"] = (
                     output_dict["predicted_answer_ids"].detach().cpu()
@@ -323,15 +327,12 @@ def run_train(
                     for predicted_answer_ids in output_dict["predicted_answer_ids"]
                 ]
 
-                # for i in range(len(reward)):
-                #     print("Raw prompt text:", batch["reward_model_prompt_text"][i])
-                #     print("Predicted text:", output_dict["predicted_text"][i])
-                #     print("reward", reward[i])
-                #     print("query_tensor", query_tensor[i].shape)
-                #     print("response_tensor", response_tensor[i].shape)
-
                 del output_dict
                 del batch
+
+                # needed?
+                # if cfg.environment._distributed:
+                #     torch.distributed.barrier()
 
                 output_dict = ppo_trainer.step(query_tensor, response_tensor, reward)
                 del query_tensor, response_tensor, reward, scores
@@ -509,10 +510,6 @@ def run(cfg: Any) -> None:
         cfg.environment._distributed = int(os.environ["WORLD_SIZE"]) > 1
     else:
         cfg.environment._distributed = False
-
-    # TODO: allow DDP with RLHF and remove this
-    if cfg.environment._distributed and cfg.training.use_rlhf:
-        raise LLMTrainingException("RLHF is not supported with DDP.")
 
     if cfg.environment._distributed:
         cfg.environment._local_rank = int(os.environ["LOCAL_RANK"])

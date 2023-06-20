@@ -358,9 +358,14 @@ class CustomDataset(Dataset):
                 ):
                     break
                 samples.insert(0, self._get_sample(int(parent_idx)))
+
+                # <|endoftext|> is replaced later in the pipeline
+                # and <prompt> + <answer> is prepended
                 sample["reward_model_prompt_text"] = (
                     self.raw_prompts[int(parent_idx)]
-                    + "<|endoftext|>"  # this is replaced later in the pipeline
+                    + "<|endoftext|>"
+                    + self.answers[int(parent_idx)]
+                    + "<|endoftext|>"
                     + sample["reward_model_prompt_text"]
                 )
 
@@ -373,23 +378,18 @@ class CustomDataset(Dataset):
 
         input_ids = torch.cat([torch.cat(sample) for sample in samples])
 
-        if self.cfg.training.use_rlhf and self.mode == "train":
-            prompt_mask = torch.cat(
-                [torch.ones_like(sample[0]) for sample in samples]
-            ).to(torch.bool)
-        else:
-            prompt_mask = torch.cat(
-                [
-                    torch.cat([torch.ones_like(sample[0]), torch.zeros_like(sample[1])])
-                    for sample in samples
-                ]
-            ).to(torch.bool)
-        attention_mask = torch.ones_like(input_ids)
-
         if not self.cfg.training.use_rlhf and self.mode == "train":
             labels = input_ids.clone()
 
             if self.cfg.dataset.mask_prompt_labels:
+                prompt_mask = torch.cat(
+                    [
+                        torch.cat(
+                            [torch.ones_like(sample[0]), torch.zeros_like(sample[1])]
+                        )
+                        for sample in samples
+                    ]
+                ).to(torch.bool)
                 labels.masked_fill_(prompt_mask, -100)
             if self.cfg.dataset.add_eos_token_to_answer:
                 # eos_token may be equal to pad_token. Add the label back manually.
@@ -404,9 +404,9 @@ class CustomDataset(Dataset):
         sample.update(
             self.pad_tokens(
                 input_ids,
-                attention_mask,
-                self.cfg.tokenizer.max_length,
-                self.tokenizer.pad_token_id,
+                attention_mask=torch.ones_like(input_ids),
+                max_length=self.cfg.tokenizer.max_length,
+                pad_token_id=self.tokenizer.pad_token_id,
             )
         )
 
@@ -419,9 +419,9 @@ class CustomDataset(Dataset):
         sample.update(
             self.pad_tokens(
                 prompt_input_ids,
-                prompt_attention_mask,
-                self.cfg.tokenizer.max_length_prompt,
-                self.tokenizer.pad_token_id,
+                attention_mask=prompt_attention_mask,
+                max_length=self.cfg.tokenizer.max_length_prompt,
+                pad_token_id=self.tokenizer.pad_token_id,
                 prefix="prompt_",
             )
         )

@@ -189,7 +189,7 @@ class ConfigNLPCausalLMTraining(DefaultConfig):
                 "GPT3.5",
                 "GPT4",
             ),
-            allow_custom=True,
+            allow_custom=False,
         )
 
         self._possible_values["batch_size"] = (1, 256, 1)

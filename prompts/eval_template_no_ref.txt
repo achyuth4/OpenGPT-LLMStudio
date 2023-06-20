@@ -1,6 +1,9 @@
-[Question]
+[Previous Conversation]
+{context}
+
+[Last User Question]
 {question}
 
-[Start of Assistant Answer]
+[Start of Assistant Answer to be rated]
 {assistant_answer}
-[End of Assistant Answer]
+[End of Assistant Answer to be rated]

@@ -165,7 +165,7 @@ def rate_reply(context, question, assistant_answer, model, deployment_id=None):
         return call_openai_api(template, model, deployment_id)
     except Exception as e:
         logger.warning(f"Exception caught in api call: {e}")
-        return 0.0
+        return -3.0
 
 
 class RewardModel(nn.Module):

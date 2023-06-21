@@ -318,7 +318,6 @@ def contains_nan(output: Dict):
     )
 
 
-@torch.inference_mode(mode=True)
 def run_inference(
     cfg: Any,
     model: torch.nn.Module,
@@ -465,10 +464,6 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs={}) -> Any:
         kwargs["torch_dtype"] = getattr(torch, cfg.architecture.backbone_dtype)
 
     logger.info(f"Using {cfg.architecture.backbone_dtype} for backbone")
-
-    if cfg.architecture.gradient_checkpointing:
-        logger.warning("Disabling cache for gradient checkpointing")
-        config.use_cache = False
 
     kwargs["trust_remote_code"] = cfg.environment.trust_remote_code
     if cfg.architecture.pretrained:

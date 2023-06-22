@@ -186,6 +186,7 @@ class ConfigNLPCausalLMTraining(DefaultConfig):
                 "OpenAssistant/reward-model-deberta-v3-large-v2",
                 "OpenAssistant/oasst-rm-2.1-pythia-1.4b-epoch-2.5",
                 "OpenAssistant/oasst-rm-2-pythia-6.9b-epoch-1",
+                "simple_reward"
             ),
             allow_custom=False,
         )

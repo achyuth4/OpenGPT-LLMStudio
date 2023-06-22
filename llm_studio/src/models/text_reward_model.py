@@ -111,14 +111,15 @@ class RewardModel(nn.Module):
 
         self.cfg = cfg
         self.model_name = cfg.training.reward_model
-        self.device = cfg.environment._device
-        self.model = AutoModelForSequenceClassification.from_pretrained(
-            self.model_name,
-            torch_dtype=torch.float16,
-        ).to(self.device)
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name, max_model_input_sizes=2048
-        )
+        if self.model_name not in ["simple_reward"]:
+            self.device = cfg.environment._device
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                self.model_name,
+                torch_dtype=torch.float16,
+            ).to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name, max_model_input_sizes=2048
+            )
 
     def get_score(
         self,
@@ -134,6 +135,8 @@ class RewardModel(nn.Module):
                     return_tensors="pt",
                     max_length=2048,
                 ).to(self.device)
+                scores.append(self.model(**inputs).logits[0].cpu().detach().item())
+                del inputs
             elif self.model_name in [
                 "OpenAssistant/oasst-rm-2.1-pythia-1.4b-epoch-2.5",
                 "OpenAssistant/oasst-rm-2-pythia-6.9b-epoch-1",
@@ -153,8 +156,10 @@ class RewardModel(nn.Module):
 
                 inputs = self.tokenizer(
                     input_text, return_tensors="pt", max_length=2048
-                ).to(self.device)
-
-            scores.append(self.model(**inputs).logits[0].cpu().detach().item())
-            del inputs
+                ).to(self.device)                
+                scores.append(self.model(**inputs).logits[0].cpu().detach().item())
+                del inputs
+            elif self.model_name in ["simple_reward"]:
+                scores.append(int(self.cfg.dataset.chatbot_name in answer))
+        
         return scores

@@ -1,5 +1,7 @@
+import logging
 from typing import Any, List
 
+import torch
 from peft.utils import TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING
 
 from app_utils.utils import copy_config
@@ -7,6 +9,8 @@ from llm_studio.python_configs.text_causal_language_modeling_config import (
     MODELNAME2MODELTYPE,
     ConfigProblemBase,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["ConfigUpdater"]
 
@@ -17,7 +21,7 @@ class NLPCausalLMConfigUpdater:
 
     def __call__(self, cfg: ConfigProblemBase):
         self.update_lora_target_layers(cfg)
-
+        self.update_gpu_ids(cfg)
         self.cfg: ConfigProblemBase = copy_config(cfg)
 
     def update_lora_target_layers(self, cfg):
@@ -37,6 +41,17 @@ class NLPCausalLMConfigUpdater:
                         "dense",
                     ],
                 }.get(model_type)
+
+    def update_gpu_ids(self, cfg):
+        # For better UX, gpu_id start with 1, thus <= in the comparison below
+        gpus = tuple(gpu_id for gpu_id in cfg.environment.gpus
+                     if gpu_id <= torch.cuda.device_count())
+        if gpus != cfg.environment.gpus:
+            logger.warning(f"Configuration specifies the following gpu ids: {cfg.environment.gpus},"
+                           f" but only found {torch.cuda.device_count()} number of GPUs. This can happen "
+                           f"when running an experiment from a configuration file that was generated on a machine with "
+                           f"more GPUs available. Automatically setting GPUs to {gpus}")
+            cfg.environment.gpus = gpus
 
 
 class ConfigUpdater:

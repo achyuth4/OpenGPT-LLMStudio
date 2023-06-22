@@ -109,7 +109,7 @@ def convert_cfg_to_nested_dictionary(cfg: ConfigProblemBase) -> dict:
             continue
 
         if any([x in k for x in ["api"]]):
-            continue
+            raise AssertionError("Potentially unsafe use of api tokens in cfg")
 
         type_annotation = type_annotations[k]
 

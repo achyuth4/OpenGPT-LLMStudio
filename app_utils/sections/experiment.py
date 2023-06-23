@@ -38,7 +38,6 @@ from app_utils.utils import (
     start_experiment,
 )
 from app_utils.wave_utils import busy_dialog, ui_table_from_df, wave_theme
-from llm_studio.python_configs.config_updater import ConfigUpdater
 from llm_studio.src.datasets.text_utils import get_tokenizer
 from llm_studio.src.tooltips import tooltips
 from llm_studio.src.utils.config_utils import (
@@ -326,7 +325,6 @@ async def experiment_start(q: Q) -> None:
     # set mode to training
     q.client["experiment/start/cfg_mode/mode"] = "train"
 
-    cfg = q.client["experiment/start/cfg"]
     if q.client["experiment/start/cfg_category"] == "experiment":
         logger.info("Starting from experiment")
 
@@ -353,17 +351,19 @@ async def experiment_start(q: Q) -> None:
                 "checkpoint.pth",
             )
             if os.path.exists(prev_weights):
-                cfg.architecture.pretrained_weights = prev_weights
-                cfg.architecture._visibility[
+                q.client[
+                    "experiment/start/cfg"
+                ].architecture.pretrained_weights = prev_weights
+                q.client["experiment/start/cfg"].architecture._visibility[
                     "pretrained_weights"
                 ] = -1
 
         experiments_df = q.client.app_db.get_experiments_df()
         output_dir = os.path.abspath(
-            os.path.join(cfg.output_directory, "..")
+            os.path.join(q.client["experiment/start/cfg"].output_directory, "..")
         )
-        cfg.experiment_name = get_unique_name(
-            cfg.experiment_name,
+        q.client["experiment/start/cfg"].experiment_name = get_unique_name(
+            q.client["experiment/start/cfg"].experiment_name,
             experiments_df["name"].values,
             lambda x: os.path.exists(os.path.join(output_dir, x)),
         )
@@ -451,12 +451,7 @@ async def experiment_start(q: Q) -> None:
     logger.info(f"From default {q.client['experiment/start/cfg_mode/from_default']}")
     logger.info(f"Config file: {q.client['experiment/start/cfg_file']}")
 
-    cfg_updater = q.client["experiment/start/cfg_updater"]
-    if not cfg_updater:
-        q.client["experiment/start/cfg_updater"] = ConfigUpdater.get(q.client["experiment/start/cfg_file"])
-    cfg_updater(cfg)
-
-    option_items = get_ui_elements(cfg=cfg, q=q)
+    option_items = get_ui_elements(cfg=q.client["experiment/start/cfg"], q=q)
     items.extend(option_items)
 
     if q.client["experiment/start/cfg_mode/from_cfg"]:

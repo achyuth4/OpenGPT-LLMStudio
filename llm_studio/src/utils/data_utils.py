@@ -1,5 +1,4 @@
 import logging
-import math
 import os
 from typing import Any, DefaultDict, Dict, List, Optional, Tuple, Union, no_type_check
 
@@ -8,8 +7,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 import torch
 from sklearn.model_selection import train_test_split
-from torch import distributed as dist
-from torch.utils.data import DataLoader, Sampler, SequentialSampler
+from torch.utils.data import DataLoader, SequentialSampler
 
 from llm_studio.src.utils.exceptions import LLMDataException
 from llm_studio.src.utils.utils import set_seed
@@ -267,20 +265,7 @@ def get_train_dataloader(train_ds: Any, cfg: Any, verbose=True):
         Train Dataloader
     """
 
-    sampler: Sampler
-    if cfg.environment._distributed:
-        sampler = torch.utils.data.distributed.DistributedSampler(
-            train_ds,
-            num_replicas=cfg.environment._world_size,
-            rank=cfg.environment._local_rank,
-            shuffle=True,
-            seed=cfg.environment._seed,
-            drop_last=True,
-        )
-        sampler_length = len(sampler)
-    else:
-        sampler = None
-        sampler_length = len(train_ds)
+    sampler_length = len(train_ds)
 
     if sampler_length < cfg.training.batch_size and cfg.training.drop_last_batch:
         logger.warning(
@@ -294,8 +279,8 @@ def get_train_dataloader(train_ds: Any, cfg: Any, verbose=True):
 
     train_dataloader = DataLoader(
         train_ds,
-        sampler=sampler,
-        shuffle=(sampler is None),
+        sampler=None,
+        shuffle=True,
         batch_size=cfg.training.batch_size,
         num_workers=cfg.environment.number_of_workers,
         pin_memory=True,
@@ -340,16 +325,7 @@ def get_val_dataloader(val_ds: Any, cfg: Any, verbose: bool = True):
     Returns:
         Validation Dataloader
     """
-
-    sampler: Sampler
-    if cfg.environment._distributed and cfg.environment._distributed_inference:
-        sampler = OrderedDistributedSampler(
-            val_ds,
-            num_replicas=cfg.environment._world_size,
-            rank=cfg.environment._local_rank,
-        )
-    else:
-        sampler = SequentialSampler(val_ds)
+    sampler = SequentialSampler(val_ds)
 
     batch_size = get_inference_batch_size(cfg)
 
@@ -396,64 +372,6 @@ def cat_batches(
                 data[key] = np.concatenate(value, axis=0)
 
     return data
-
-
-class OrderedDistributedSampler(Sampler):
-    """
-    Sampler that restricts data loading to a subset of the dataset.
-    It is especially useful in conjunction with
-    :class:`torch.nn.parallel.DistributedDataParallel`. In such case, each
-    process can pass a DistributedSampler instance as a DataLoader sampler,
-    and load a subset of the original dataset that is exclusive to it.
-    Source:
-    https://github.com/rwightman/pytorch-image-models/blob/master/timm/data/distributed_sampler.py
-    """
-
-    def __init__(
-        self,
-        dataset: Any,
-        num_replicas: Optional[int] = None,
-        rank: Optional[int] = None,
-    ):
-        """
-        Args:
-            dataset: Dataset used for sampling
-            num_replicas: Number of processes participating in distributed training
-            rank: Rank of the current process within num_replicas
-        """
-
-        if num_replicas is None:
-            if not dist.is_available():
-                raise RuntimeError("Requires distributed package to be available")
-            num_replicas = dist.get_world_size()
-        if rank is None:
-            if not dist.is_available():
-                raise RuntimeError("Requires distributed package to be available")
-            rank = dist.get_rank()
-        self.dataset = dataset
-        self.num_replicas = num_replicas
-        self.rank = rank
-        self.num_samples = int(math.ceil(len(self.dataset) * 1.0 / self.num_replicas))
-        self.total_size = self.num_samples * self.num_replicas
-
-    def __iter__(self):
-        indices = list(range(len(self.dataset)))
-
-        # add extra samples to make it evenly divisible
-        indices += [0] * (self.total_size - len(indices))
-        assert len(indices) == self.total_size
-
-        # subsample
-        indices = indices[
-            self.rank * self.num_samples : self.rank * self.num_samples
-            + self.num_samples
-        ]
-        assert len(indices) == self.num_samples
-
-        return iter(indices)
-
-    def __len__(self):
-        return self.num_samples
 
 
 def sample_indices(length: int, n_indices: int = 10, seed: int = 1337) -> np.ndarray:

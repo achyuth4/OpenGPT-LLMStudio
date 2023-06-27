@@ -61,7 +61,7 @@ from llm_studio.src.utils.export_utils import (
     save_prediction_outputs,
 )
 from llm_studio.src.utils.logging_utils import write_flag
-from llm_studio.src.utils.modeling_utils import load_checkpoint, unwrap_model
+from llm_studio.src.utils.modeling_utils import load_checkpoint
 from llm_studio.src.utils.utils import add_file_to_zip, kill_child_processes
 
 logger = logging.getLogger(__name__)
@@ -1618,7 +1618,6 @@ async def experiment_download_model(q: Q, error: str = ""):
             experiment_path, merge=True, device=device
         )
 
-        model = unwrap_model(model)
         checkpoint_path = cfg.output_directory
         model.backbone.save_pretrained(checkpoint_path)
         tokenizer.save_pretrained(checkpoint_path)

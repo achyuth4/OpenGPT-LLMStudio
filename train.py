@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -18,8 +19,18 @@ from typing import Any, Callable, Dict, Tuple
 import numpy as np
 import pandas as pd
 import torch
-from torch.cuda.amp import GradScaler, autocast
-from torch.distributed.fsdp.sharded_grad_scaler import ShardedGradScaler
+from accelerate import (
+    Accelerator,
+    DeepSpeedPlugin,
+    DistributedDataParallelKwargs,
+    DistributedType,
+    FullyShardedDataParallelPlugin,
+    InitProcessGroupKwargs,
+)
+from torch.distributed.fsdp.fully_sharded_data_parallel import (
+    CPUOffload,
+    MixedPrecision,
+)
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -58,7 +69,6 @@ from llm_studio.src.utils.modeling_utils import (
     save_checkpoint,
     save_predictions,
     unwrap_model,
-    wrap_model_distributed,
 )
 from llm_studio.src.utils.utils import kill_ddp_processes, set_environment, set_seed
 
@@ -67,6 +77,7 @@ logger = logging.getLogger(__name__)
 
 def run_eval(
     cfg,
+    accelerator: Accelerator,
     model: torch.nn.Module,
     val_dataloader: DataLoader,
     val_df: pd.DataFrame,
@@ -88,11 +99,11 @@ def run_eval(
     with torch.no_grad():
         model.eval()
         val_data: Dict[str, Any] = run_inference(
-            cfg, model, val_dataloader, mode
+            cfg, accelerator, model, val_dataloader, mode
         )  # type: ignore
 
     # Sync validation predictions across GPUs
-    if cfg.environment._distributed and cfg.environment._distributed_inference:
+    if cfg.environment._distributed != DistributedType.NO:
         for key, value in val_data.items():
             val_data[key] = sync_across_processes(
                 value, cfg.environment._world_size, group=cfg.environment._cpu_comm
@@ -139,9 +150,7 @@ def run_eval(
 
         save_predictions(cfg, val_data, val_dataloader, val_df, mode)
 
-    if cfg.environment._distributed:
-        torch.distributed.barrier()
-
+    accelerator.wait_for_everyone()
     torch.inference_mode(mode=False)
 
     return val_loss, val_metric
@@ -149,6 +158,7 @@ def run_eval(
 
 def run_train(
     cfg: Any,
+    accelerator: Accelerator,
     model: torch.nn.Module,
     reward_model: Any,
     train_dataloader,
@@ -172,17 +182,20 @@ def run_train(
         Last train batch
     """
 
-    epoch_steps = len(train_dataloader)
+    model = accelerator.prepare(model)
 
+    # Prepare optimizer and scheduler after preparing the model
+    # https://huggingface.co/docs/accelerate/usage_guides/fsdp#a-few-caveats-to-be-aware-of
     optimizer = get_optimizer(model=model, cfg=cfg)
-    scheduler = get_scheduler(cfg=cfg, optimizer=optimizer, epoch_steps=epoch_steps)
+    scheduler = get_scheduler(
+        cfg=cfg, optimizer=optimizer, epoch_steps=len(train_dataloader)
+    )
 
-    scaler: GradScaler | ShardedGradScaler | None = None
-    if cfg.environment.mixed_precision:
-        if cfg.environment.use_fsdp:
-            scaler = ShardedGradScaler()
-        else:
-            scaler = GradScaler()
+    # Prepare everything for training
+    model, optimizer, train_dataloader, val_dataloader, scheduler = accelerator.prepare(
+        model, optimizer, train_dataloader, val_dataloader, scheduler
+    )
+    epoch_steps = len(train_dataloader)
 
     optimizer.zero_grad(set_to_none=True)
 
@@ -206,9 +219,12 @@ def run_train(
 
     if cfg.training.evaluate_before_training:
         val_loss, val_metric = run_eval(
-            cfg=cfg, model=model, val_dataloader=val_dataloader, val_df=val_df
+            cfg=cfg,
+            accelerator=accelerator,
+            model=model,
+            val_dataloader=val_dataloader,
+            val_df=val_df,
         )
-
     if cfg.training.use_rlhf:
         # initialize trainer
         tokenizer = get_tokenizer(cfg)
@@ -218,7 +234,6 @@ def run_train(
             tokenizer=tokenizer,
             optimizer=optimizer,
             lr_scheduler=scheduler,
-            scaler=scaler,
         )
 
     for epoch in range(start_epoch, cfg.training.epochs):
@@ -230,11 +245,6 @@ def run_train(
         if cfg.environment._local_rank == 0:
             logger.info(f"Training Epoch: {epoch + 1} / {cfg.training.epochs}")
 
-        if cfg.environment._distributed and hasattr(
-            train_dataloader.sampler, "set_epoch"
-        ):
-            train_dataloader.sampler.set_epoch(epoch)  # type: ignore
-
         tqdm_out = TqdmToLogger(logger, level=logging.INFO)
         progress_bar = tqdm(
             total=epoch_steps,
@@ -244,21 +254,16 @@ def run_train(
             desc="train loss",
             mininterval=0,
         )
-        tr_it = iter(train_dataloader)
-
         losses = []
         model.train()
 
         log_update_steps = max(epoch_steps // 20, 1)
         evaluation_step = int(epoch_steps * cfg.training.evaluation_epochs)
-        for itr in range(epoch_steps):
+        for itr, data in enumerate(train_dataloader):
             num_updates += 1
             cfg.environment._curr_step += (
                 cfg.training.batch_size * cfg.environment._world_size
             )
-
-            # Get batch
-            data = next(tr_it)
 
             # Batch to device
             batch = cfg.dataset.dataset_class.batch_to_device(
@@ -293,7 +298,7 @@ def run_train(
                     # tokenize prompt & output internally
                     if cfg.training.offload_reward_model:
                         reward_model.to(cfg.environment._device)
-                    with autocast(enabled=cfg.environment.mixed_precision):
+                    with accelerator.autocast():
                         scores = reward_model.get_score(
                             batch["reward_model_prompt_text"],
                             output_dict["predicted_text"],
@@ -340,8 +345,9 @@ def run_train(
                 losses.append(loss)
             else:
                 # Forward pass
-                with autocast(enabled=cfg.environment.mixed_precision):
-                    output_dict = model.forward(batch, generate=False)
+                with accelerator.accumulate(model):
+                    with accelerator.autocast():
+                        output_dict = model.forward(batch)
 
                 loss = output_dict["loss"]
                 if ~np.isfinite(loss.item()) and (num_updates > 20):
@@ -361,29 +367,13 @@ def run_train(
                     loss = loss / cfg.training.grad_accumulation
 
                 # Backward pass
-                if cfg.environment.mixed_precision:
-                    scaler.scale(loss).backward()  # type: ignore
-                    if num_updates % cfg.training.grad_accumulation == 0:
-                        if cfg.training.gradient_clip > 0:
-                            scaler.unscale_(optimizer)  # type: ignore
-                            torch.nn.utils.clip_grad_norm_(
-                                model.parameters(), cfg.training.gradient_clip
-                            )
-                        scaler.step(optimizer)  # type: ignore
-                        scaler.update()
-                        optimizer.zero_grad(set_to_none=True)
-                else:
-                    loss.backward()
-                    if num_updates % cfg.training.grad_accumulation == 0:
-                        if cfg.training.gradient_clip > 0:
-                            torch.nn.utils.clip_grad_norm_(
-                                model.parameters(), cfg.training.gradient_clip
-                            )
-                        optimizer.step()
-                        optimizer.zero_grad(set_to_none=True)
-
-                if cfg.environment._distributed:
-                    torch.cuda.synchronize(device=cfg.environment._local_rank)
+                accelerator.backward(loss)
+                if (cfg.training.gradient_clip > 0) and accelerator.sync_gradients:
+                    accelerator.clip_grad_norm_(
+                        model.parameters(), cfg.training.gradient_clip
+                    )
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
 
                 if scheduler is not None:
                     scheduler.step()
@@ -445,7 +435,11 @@ def run_train(
                     progress_bar.close()
 
                 val_loss, val_metric = run_eval(
-                    cfg=cfg, model=model, val_dataloader=val_dataloader, val_df=val_df
+                    cfg=cfg,
+                    accelerator=accelerator,
+                    model=model,
+                    val_dataloader=val_dataloader,
+                    val_df=val_df,
                 )
                 if cfg.environment._local_rank == 0:
                     if (
@@ -468,9 +462,7 @@ def run_train(
         progress_bar.close()
         del progress_bar
 
-        if cfg.environment._distributed:
-            torch.cuda.synchronize(device=cfg.environment._local_rank)
-            torch.distributed.barrier()
+        accelerator.wait_for_everyone()
 
         if cfg.environment._local_rank == 0:
             cfg.logging._logger.log(
@@ -505,38 +497,79 @@ def run(cfg: Any) -> None:
         cfg.environment._seed = cfg.environment.seed
 
     # Prepare environment
-    if "WORLD_SIZE" in os.environ:
-        cfg.environment._distributed = int(os.environ["WORLD_SIZE"]) > 1
+    # Initialize the accelerator
+    ddp_kwargs = DistributedDataParallelKwargs(
+        find_unused_parameters=cfg.environment.find_unused_parameters
+    )
+    init_process_kwargs = InitProcessGroupKwargs(
+        backend="nccl", init_method="env://", timeout=timedelta(seconds=800)
+    )
+    if cfg.environment.use_fsdp:
+        mixed_precision_policy = MixedPrecision(
+            param_dtype=torch.float16,
+            reduce_dtype=torch.float16,
+            buffer_dtype=torch.float16,
+        )
+        fsdp_plugin = FullyShardedDataParallelPlugin(
+            cpu_offload=CPUOffload(offload_params=True),
+            mixed_precision_policy=mixed_precision_policy,
+        )
     else:
-        cfg.environment._distributed = False
+        fsdp_plugin = None
 
-    if cfg.environment._distributed:
-        cfg.environment._local_rank = int(os.environ["LOCAL_RANK"])
-        cfg.environment._device = "cuda:%d" % cfg.environment._local_rank
-        torch.distributed.init_process_group(backend="nccl", init_method="env://")
-        cfg.environment._cpu_comm = torch.distributed.new_group(backend="gloo")
+    if cfg.environment.use_deepspeed:
+        deepspeed_plugin = DeepSpeedPlugin(
+            # hf_ds_config=deepspeed_config,
+            zero_stage=2,
+            gradient_accumulation_steps=cfg.training.grad_accumulation,
+            offload_optimizer_device="cpu",
+            # offload_param_device="cpu",
+            # zero3_init_flag=True,
+            # zero3_save_16bit_model=True,
+        )
+        deepspeed_plugin.deepspeed_config[
+            "train_micro_batch_size_per_gpu"
+        ] = cfg.training.batch_size
+        deepspeed_plugin.deepspeed_config["optimizer"] = {
+            "type": "AdamW",
+            "params": {
+                "lr": cfg.training.learning_rate,
+                "betas": [0.8, 0.999],
+                "eps": 1e-8,
+                "weight_decay": 3e-7,
+            },
+        }
+    else:
+        deepspeed_plugin = None
 
-        cfg.environment._world_size = torch.distributed.get_world_size()
-        cfg.environment._rank = torch.distributed.get_rank()
-        torch.cuda.set_device(cfg.environment._rank)
+    if cfg.environment.mixed_precision:
+        mixed_precision = "fp16"
+    else:
+        mixed_precision = "no"
+
+    accelerator = Accelerator(
+        fsdp_plugin=fsdp_plugin,
+        deepspeed_plugin=deepspeed_plugin,
+        mixed_precision=mixed_precision,  # ["no", "fp16", "bf16", "fp8"]
+        gradient_accumulation_steps=cfg.training.grad_accumulation,
+        kwargs_handlers=[ddp_kwargs, init_process_kwargs],
+    )
+
+    cfg.environment._local_rank = accelerator.local_process_index
+    cfg.environment._rank = accelerator.process_index
+    cfg.environment._device = accelerator.device
+    cfg.environment._distributed = accelerator.distributed_type
+    logger.info(cfg.environment._distributed)
+    cfg.environment._device = accelerator.device
+    cfg.environment._world_size = accelerator.num_processes
+
+    if cfg.environment._distributed != DistributedType.NO:
         logger.info(
             f"Training in distributed mode with multiple processes, "
             f"1 GPU per process. Process {cfg.environment._rank}, "
             f"total: {cfg.environment._world_size} "
             f"local rank: {cfg.environment._local_rank}."
         )
-
-        # Sync the random seed
-        cfg.environment._seed = int(
-            sync_across_processes(
-                np.array([cfg.environment._seed]),
-                cfg.environment._world_size,
-                group=cfg.environment._cpu_comm,
-            )[0]
-        )
-    else:
-        cfg.environment._local_rank = 0
-        cfg.environment._device = "cuda:0"
 
     set_seed(cfg.environment._seed)
     if cfg.environment._local_rank == 0:
@@ -570,12 +603,8 @@ def run(cfg: Any) -> None:
 
     if cfg.environment._local_rank == 0:
         total_training_steps = (
-            cfg.training.epochs
-            * len(train_dataloader)
-            * cfg.training.batch_size
-            * cfg.environment._world_size
+            cfg.training.epochs * len(train_dataloader) * cfg.training.batch_size
         )
-
         num_eval_epochs = get_number_of_validation_epochs(
             training_epochs=cfg.training.epochs,
             evaluation_epochs=cfg.training.evaluation_epochs,
@@ -629,7 +658,7 @@ def run(cfg: Any) -> None:
         model = wrap_model_distributed(model, cfg, cfg.environment.use_fsdp)
 
     if cfg.environment.compile_model:
-        if cfg.environment._distributed:
+        if cfg.environment._distributed != DistributedType.NO:
             model.module.backbone = torch.compile(model.module.backbone)
         else:
             model.backbone = torch.compile(model.backbone)
@@ -671,12 +700,16 @@ def run(cfg: Any) -> None:
 
     val_loss, val_metric = run_train(
         cfg=cfg,
+        accelerator=accelerator,
         model=model,
         reward_model=reward_model,
         train_dataloader=train_dataloader,
         val_dataloader=val_dataloader,
         val_df=val_df,
     )
+
+    # Unwrap model
+    model = accelerator.unwrap_model(model)
 
     # reset external logging
     if cfg.environment._local_rank == 0:

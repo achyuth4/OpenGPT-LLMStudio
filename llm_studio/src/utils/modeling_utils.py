@@ -7,19 +7,14 @@ from typing import Any, Dict
 import coolname
 import numpy as np
 import torch
-from torch.cuda.amp import autocast
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    FullyShardedDataParallel,
-    MixedPrecision,
-)
-from torch.nn.parallel import DistributedDataParallel
+from accelerate import Accelerator
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, BitsAndBytesConfig
 
 from llm_studio.src.optimizers import Optimizers
 from llm_studio.src.schedulers import Schedulers
 from llm_studio.src.utils.data_utils import cat_batches, get_inference_batch_size
-from llm_studio.src.utils.exceptions import LLMDataException, LLMModelException
+from llm_studio.src.utils.exceptions import LLMDataException
 from llm_studio.src.utils.logging_utils import TqdmToLogger
 from llm_studio.src.utils.utils import save_pickle
 
@@ -129,41 +124,6 @@ def load_checkpoint(
 
     if cfg.environment._local_rank == 0:
         logger.info(f"Weights loaded from: {weights_path}")
-
-
-def wrap_model_distributed(model: torch.nn.Module, cfg: Any, fsdp: bool):
-    if fsdp:
-        auto_wrap_policy = None
-
-        mixed_precision_policy = None
-        dtype = None
-        if cfg.environment.mixed_precision:
-            dtype = torch.float16
-        if dtype is not None:
-            mixed_precision_policy = MixedPrecision(
-                param_dtype=dtype, reduce_dtype=dtype, buffer_dtype=dtype
-            )
-        model = FullyShardedDataParallel(
-            model,
-            # sharding_strategy=ShardingStrategy.SHARD_GRAD_OP,
-            # cpu_offload=CPUOffload(offload_params=True),
-            auto_wrap_policy=auto_wrap_policy,
-            mixed_precision=mixed_precision_policy,
-            device_id=cfg.environment._local_rank,
-            # use_orig_params=False
-            limit_all_gathers=True,
-        )
-    else:
-        find_unused_parameters = cfg.environment.find_unused_parameters
-        if getattr(cfg.architecture, "gradient_checkpointing", None):
-            find_unused_parameters = False
-        model = DistributedDataParallel(
-            model,
-            device_ids=[cfg.environment._local_rank],
-            find_unused_parameters=find_unused_parameters,
-        )
-
-    return model
 
 
 def get_optimizer(model: torch.nn.Module, cfg: Any) -> torch.optim.Optimizer:
@@ -319,6 +279,7 @@ def contains_nan(output: Dict):
 
 def run_inference(
     cfg: Any,
+    accelerator: Accelerator,
     model: torch.nn.Module,
     dataloader,
     mode: str,
@@ -365,16 +326,8 @@ def run_inference(
 
         batch = cfg.dataset.dataset_class.batch_to_device(data, cfg.environment._device)
 
-        with autocast(enabled=cfg.environment.mixed_precision):
+        with accelerator.autocast():
             output = model.forward(batch, generate=True)
-        if contains_nan(output) and cfg.environment.mixed_precision:
-            raise LLMModelException(
-                "NaN caught during mixed precision inference. "
-                "Please disable mixed precision inference. "
-                "Alternatively, reducing learning rate or "
-                "gradient clipping may help to stabilize training."
-            )
-
         output = dataloader.dataset.postprocess_batch_predictions(
             cfg=cfg, output=output
         )
@@ -453,6 +406,12 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs=None) -> Any:
         )
     config.hidden_dropout_prob = cfg.architecture.intermediate_dropout
     config.attention_probs_dropout_prob = cfg.architecture.intermediate_dropout
+
+    if cfg.environment.use_fsdp or cfg.environment.use_deepspeed:
+        # FSDP and DeepSpeed do not support gradient checkpointing
+        # FSDP and DeppSpeed do not support quantization below fp16
+        cfg.architecture.backbone_dtype = "float16"  # TODO: Add warning
+        cfg.architecture.gradient_checkpointing = False
 
     quantization_config = None
     if cfg.architecture.backbone_dtype == "int8":

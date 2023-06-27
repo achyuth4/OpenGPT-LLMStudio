@@ -135,14 +135,15 @@ def start_process(
     #         ]
     #     )
     else:
-        free_port = find_free_port()
         p = subprocess.Popen(
             [
                 "env",
                 f"CUDA_VISIBLE_DEVICES={','.join(gpu_list)}",
-                "torchrun",
-                f"--nproc_per_node={str(num_gpus)}",
-                f"--master_port={str(free_port)}",
+                "accelerate",
+                "launch",
+                # "--multi_gpu",
+                # "--num_processes",
+                # f"{len(gpu_list)}",
                 "train_wave.py",
                 "-Y",
                 config_name,

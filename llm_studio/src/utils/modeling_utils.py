@@ -145,9 +145,9 @@ def wrap_model_distributed(model: torch.nn.Module, cfg: Any, fsdp: bool):
             mixed_precision_policy = MixedPrecision(
                 param_dtype=dtype, reduce_dtype=dtype, buffer_dtype=dtype
             )
-        ignored_params = None
+        ignored_states = None
         if cfg.training.lora:
-            ignored_params = [param for name, param in model.backbone.named_parameters() if
+            ignored_states = [param for name, param in model.backbone.named_parameters() if
                               not isinstance(param, LoraLayer)]
         model = FullyShardedDataParallel(
             model,
@@ -158,7 +158,7 @@ def wrap_model_distributed(model: torch.nn.Module, cfg: Any, fsdp: bool):
             device_id=cfg.environment._local_rank,
             use_orig_params=True if cfg.training.lora else False,
             limit_all_gathers=True,
-            ignored_parameters=ignored_params
+            ignored_states=ignored_states
         )
     else:
         find_unused_parameters = cfg.environment.find_unused_parameters

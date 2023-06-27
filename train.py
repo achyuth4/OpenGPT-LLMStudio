@@ -215,8 +215,6 @@ def run_train(
         best_val_metric = np.inf
         objective_op = np.less
 
-    num_updates = 0
-
     if cfg.training.evaluate_before_training:
         val_loss, val_metric = run_eval(
             cfg=cfg,
@@ -260,7 +258,6 @@ def run_train(
         log_update_steps = max(epoch_steps // 20, 1)
         evaluation_step = int(epoch_steps * cfg.training.evaluation_epochs)
         for itr, data in enumerate(train_dataloader):
-            num_updates += 1
             cfg.environment._curr_step += (
                 cfg.training.batch_size * accelerator.num_processes
             )
@@ -280,103 +277,20 @@ def run_train(
                 log_plot(cfg, plot, "train_data")
 
             if cfg.training.use_rlhf:
-                with torch.no_grad():
-                    logger.debug("Rollout: Generating response from active model")
-                    output_dict = {}
-                    output_dict["predicted_answer_ids"] = (
-                        unwrap_model(model)
-                        .generate(batch, unwrap_model(model).cfg)
-                        .detach()
-                    )
-                    output_dict = (
-                        train_dataloader.dataset.postprocess_batch_predictions(
-                            cfg=cfg, output=output_dict
-                        )
-                    )
-
-                    logger.debug("Evaluation: Score from reward model")
-                    # tokenize prompt & output internally
-                    if cfg.training.offload_reward_model:
-                        reward_model.to(accelerator.device)
-                    with accelerator.autocast():
-                        scores = reward_model.get_score(
-                            batch["reward_model_prompt_text"],
-                            output_dict["predicted_text"],
-                        )
-                    if cfg.training.offload_reward_model:
-                        reward_model.to("cpu")
-
-                # score by reward model
-                reward = [torch.tensor(score, dtype=torch.float32) for score in scores]
-
-                # remove padding from query and response
-                batch["input_ids"] = batch["input_ids"].detach().cpu()
-                query_tensor = [
-                    input_ids[torch.where(att_mask == 1)[0].min() :]
-                    if len(torch.where(att_mask == 1)[0]) > 0
-                    else input_ids
-                    for input_ids, att_mask in zip(
-                        batch["input_ids"].detach().cpu(), batch["attention_mask"]
-                    )
-                ]
-                pad_tok_id = (
-                    unwrap_model(model).backbone.config.pad_token_id
-                    or unwrap_model(model).backbone.config.eos_token_id
-                )
-                output_dict["predicted_answer_ids"] = (
-                    output_dict["predicted_answer_ids"].detach().cpu()
-                )
-                response_tensor = [
-                    predicted_answer_ids[
-                        : torch.where(predicted_answer_ids == pad_tok_id)[0].min()
-                    ]
-                    if len(torch.where(predicted_answer_ids == pad_tok_id)[0]) > 0
-                    else predicted_answer_ids
-                    for predicted_answer_ids in output_dict["predicted_answer_ids"]
-                ]
-
-                del output_dict
-                del batch
-
-                output_dict = ppo_trainer.step(query_tensor, response_tensor, reward)
-                del query_tensor, response_tensor, reward, scores
-
-                loss = output_dict["ppo/loss/total"]
-                losses.append(loss)
+                output_dict = train_rlhf_one_batch(accelerator, batch, cfg, model, ppo_trainer, reward_model,
+                                                   train_dataloader)
+                losses.append(output_dict["ppo/loss/total"])
             else:
-                # Forward pass
-                with accelerator.accumulate(model):
-                    with accelerator.autocast():
-                        output_dict = model.forward(batch)
-
-                loss = output_dict["loss"]
-                if ~np.isfinite(loss.item()) and (num_updates > 20):
+                output_dict = train_one_batch(accelerator, batch, cfg, model, optimizer,
+                                              scheduler)
+                losses.append(output_dict["loss"])
+                if ~np.isfinite(output_dict["loss"]) and (itr >= 20):
                     raise LLMTrainingException(
                         "NaN caught in loss during training. "
                         "Please, reduce learning rate, change dtype, "
                         "or disable mixed precision. Alternatively, "
                         "gradient clipping may help to stabilize training."
                     )
-                losses.append(loss.item())
-
-                # loss is a mean loss per batch/sample
-                # as grad_accumulations sums up the gradients, this loss must be scaled
-                # by the number of grad_accumulations, to have similar behavior for
-                # BS * grad_accumulations = const.
-                if cfg.training.grad_accumulation != 1:
-                    loss = loss / cfg.training.grad_accumulation
-
-                # Backward pass
-                accelerator.backward(loss)
-                if (cfg.training.gradient_clip > 0) and accelerator.sync_gradients:
-                    accelerator.clip_grad_norm_(
-                        model.parameters(), cfg.training.gradient_clip
-                    )
-                optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
-
-                if scheduler is not None:
-                    scheduler.step()
 
             if accelerator.local_process_index == 0:
                 if cfg.training.use_rlhf:
@@ -473,6 +387,97 @@ def run_train(
         torch.distributed.barrier()
 
     return val_loss, val_metric
+
+
+def train_one_batch(accelerator: Accelerator,
+                    batch,
+                    cfg,
+                    model,
+                    optimizer,
+                    scheduler):
+    # Forward pass
+    with accelerator.accumulate(model):
+        with accelerator.autocast():
+            output_dict = model.forward(batch)
+    loss = output_dict["loss"]
+    # loss is a mean loss per batch/sample
+    # as grad_accumulations sums up the gradients, this loss must be scaled
+    # by the number of grad_accumulations, to have similar behavior for
+    # BS * grad_accumulations = const.
+    if cfg.training.grad_accumulation != 1:
+        loss = loss / cfg.training.grad_accumulation
+    # Backward pass
+    accelerator.backward(loss)
+    output_dict["loss"] = loss.item()
+    if (cfg.training.gradient_clip > 0) and accelerator.sync_gradients:
+        accelerator.clip_grad_norm_(
+            model.parameters(), cfg.training.gradient_clip
+        )
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+    if scheduler is not None:
+        scheduler.step()
+    return output_dict
+
+
+def train_rlhf_one_batch(accelerator, batch, cfg, model, ppo_trainer, reward_model, train_dataloader):
+    with torch.no_grad():
+        logger.debug("Rollout: Generating response from active model")
+        output_dict = {}
+        output_dict["predicted_answer_ids"] = (
+            unwrap_model(model)
+            .generate(batch, unwrap_model(model).cfg)
+            .detach()
+        )
+        output_dict = (
+            train_dataloader.dataset.postprocess_batch_predictions(
+                cfg=cfg, output=output_dict
+            )
+        )
+
+        logger.debug("Evaluation: Score from reward model")
+        # tokenize prompt & output internally
+        if cfg.training.offload_reward_model:
+            reward_model.to(accelerator.device)
+        with accelerator.autocast():
+            scores = reward_model.get_score(
+                batch["reward_model_prompt_text"],
+                output_dict["predicted_text"],
+            )
+        if cfg.training.offload_reward_model:
+            reward_model.to("cpu")
+    # score by reward model
+    reward = [torch.tensor(score, dtype=torch.float32) for score in scores]
+    # remove padding from query and response
+    batch["input_ids"] = batch["input_ids"].detach().cpu()
+    query_tensor = [
+        input_ids[torch.where(att_mask == 1)[0].min():]
+        if len(torch.where(att_mask == 1)[0]) > 0
+        else input_ids
+        for input_ids, att_mask in zip(
+            batch["input_ids"].detach().cpu(), batch["attention_mask"]
+        )
+    ]
+    pad_tok_id = (
+            unwrap_model(model).backbone.config.pad_token_id
+            or unwrap_model(model).backbone.config.eos_token_id
+    )
+    output_dict["predicted_answer_ids"] = (
+        output_dict["predicted_answer_ids"].detach().cpu()
+    )
+    response_tensor = [
+        predicted_answer_ids[
+        : torch.where(predicted_answer_ids == pad_tok_id)[0].min()
+        ]
+        if len(torch.where(predicted_answer_ids == pad_tok_id)[0]) > 0
+        else predicted_answer_ids
+        for predicted_answer_ids in output_dict["predicted_answer_ids"]
+    ]
+    del output_dict
+    del batch
+    output_dict = ppo_trainer.step(query_tensor, response_tensor, reward)
+    del query_tensor, response_tensor, reward, scores
+    return output_dict
 
 
 def run(cfg: Any) -> None:

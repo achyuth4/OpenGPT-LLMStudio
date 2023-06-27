@@ -8,6 +8,7 @@ import coolname
 import numpy as np
 import torch
 from peft import prepare_model_for_kbit_training
+from peft.tuners.lora import LoraLayer
 from torch.cuda.amp import autocast
 from torch.distributed.fsdp.fully_sharded_data_parallel import (
     FullyShardedDataParallel,
@@ -144,6 +145,10 @@ def wrap_model_distributed(model: torch.nn.Module, cfg: Any, fsdp: bool):
             mixed_precision_policy = MixedPrecision(
                 param_dtype=dtype, reduce_dtype=dtype, buffer_dtype=dtype
             )
+        ignored_params = None
+        if cfg.training.lora:
+            ignored_params = [param for name, param in model.backbone.named_parameters() if
+                              not isinstance(param, LoraLayer)]
         model = FullyShardedDataParallel(
             model,
             # sharding_strategy=ShardingStrategy.SHARD_GRAD_OP,
@@ -151,8 +156,9 @@ def wrap_model_distributed(model: torch.nn.Module, cfg: Any, fsdp: bool):
             auto_wrap_policy=auto_wrap_policy,
             mixed_precision=mixed_precision_policy,
             device_id=cfg.environment._local_rank,
-            use_orig_params=True,
+            use_orig_params=True if cfg.training.lora else False,
             limit_all_gathers=True,
+            ignored_parameters=ignored_params
         )
     else:
         find_unused_parameters = cfg.environment.find_unused_parameters

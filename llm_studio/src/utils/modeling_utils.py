@@ -84,7 +84,7 @@ def load_model_weights(
         if strict:
             raise e
         else:
-            if cfg.environment._local_rank == 0:
+            if accelerator.local_process_index == 0:
                 logger.warning(
                     "Only a part of the pretrained weights was loaded. "
                     "Some layers can't be initialized with pretrained "
@@ -122,7 +122,7 @@ def load_checkpoint(
 
     del model_weights
 
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         logger.info(f"Weights loaded from: {weights_path}")
 
 
@@ -300,13 +300,13 @@ def run_inference(
     # Store information for evaluation
     out = dict()
 
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         logger.info(f"Starting {mode} inference")
 
     tqdm_out = TqdmToLogger(logger, level=logging.INFO)
     progress_bar = tqdm(
         total=len(dataloader),
-        disable=cfg.environment._local_rank != 0,
+        disable=accelerator.local_process_index != 0,
         file=tqdm_out,
         ascii=True,
         desc=f"{mode} progress",
@@ -322,9 +322,9 @@ def run_inference(
             raise LLMDataException("Data reading error. Skipping inference.")
 
         val_batch_size = get_inference_batch_size(cfg)
-        cfg.environment._curr_val_step += val_batch_size * cfg.environment._world_size
+        cfg.environment._curr_val_step += val_batch_size * accelerator.num_processes
 
-        batch = cfg.dataset.dataset_class.batch_to_device(data, cfg.environment._device)
+        batch = cfg.dataset.dataset_class.batch_to_device(data, accelerator.device)
 
         with accelerator.autocast():
             output = model.forward(batch, generate=True)
@@ -345,7 +345,7 @@ def run_inference(
             else:
                 out[key] += [val]
 
-        if cfg.environment._local_rank == 0:
+        if accelerator.local_process_index == 0:
             # Show logs each 5% of the inference
             if (itr + 1) % log_update_steps == 0 or itr == len(dataloader) - 1:
                 progress_bar.set_description(f"{mode} progress", refresh=False)
@@ -361,7 +361,7 @@ def run_inference(
                 step=cfg.environment._curr_val_step,
             )
 
-        if cfg.environment._distributed:
+        if accelerator.distributed_type:
             torch.distributed.barrier()
 
     progress_bar.close()
@@ -415,7 +415,7 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs=None) -> Any:
 
     quantization_config = None
     if cfg.architecture.backbone_dtype == "int8":
-        kwargs["device_map"] = {"": cfg.environment._device}
+        kwargs["device_map"] = {"": accelerator.device}
         quantization_config = BitsAndBytesConfig(
             load_in_8bit=True,
             llm_int8_threshold=0.0,
@@ -424,7 +424,7 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs=None) -> Any:
         cfg.architecture.pretrained = True
         kwargs["torch_dtype"] = torch.float16
     elif cfg.architecture.backbone_dtype == "int4":
-        kwargs["device_map"] = {"": cfg.environment._device}
+        kwargs["device_map"] = {"": accelerator.device}
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.float16,

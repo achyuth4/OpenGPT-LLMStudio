@@ -58,8 +58,8 @@ if __name__ == "__main__":
 
     cfg.training.epochs = 0
 
-    cfg.environment._device = DEVICE
-    cfg.environment._local_rank = 0
+    accelerator.device = DEVICE
+    accelerator.local_process_index = 0
 
     cfg.tokenizer.padding_quantile = 0
 

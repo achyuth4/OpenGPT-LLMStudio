@@ -1888,8 +1888,8 @@ def load_cfg_model_tokenizer(experiment_path, merge=False, device="cuda:0"):
     cfg = load_config_yaml(os.path.join(experiment_path, "cfg.yaml"))
     cfg.architecture.pretrained = False
     cfg.architecture.gradient_checkpointing = False
-    cfg.environment._device = device.replace("_shard", "")
-    cfg.environment._local_rank = 0
+    accelerator.device = device.replace("_shard", "")
+    accelerator.local_process_index = 0
     cfg.prediction._visibility["num_history"] = 1
 
     tokenizer = get_tokenizer(cfg)
@@ -1906,7 +1906,7 @@ def load_cfg_model_tokenizer(experiment_path, merge=False, device="cuda:0"):
         cfg.architecture.backbone_dtype = "float16"
         cfg.architecture.pretrained = True
 
-    with torch.device(cfg.environment._device):
+    with torch.device(accelerator.device):
         model = cfg.architecture.model_class(cfg)
         cfg.architecture.pretrained_weights = os.path.join(
             experiment_path, "checkpoint.pth"

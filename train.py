@@ -103,10 +103,10 @@ def run_eval(
         )  # type: ignore
 
     # Sync validation predictions across GPUs
-    if cfg.environment._distributed != DistributedType.NO:
+    if accelerator.distributed_type != DistributedType.NO:
         for key, value in val_data.items():
             val_data[key] = sync_across_processes(
-                value, cfg.environment._world_size, group=cfg.environment._cpu_comm
+                value, accelerator.num_processes, group=cfg.environment._cpu_comm
             )
 
     torch.inference_mode(mode=True)
@@ -114,14 +114,14 @@ def run_eval(
     for k, v in val_data.items():
         val_data[k] = v[: len(val_dataloader.dataset)]  # type: ignore
 
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         val_data = val_dataloader.dataset.postprocess_output(  # type: ignore
             cfg=cfg, df=val_df, output=val_data
         )
 
     val_loss = 0.0
     val_metric = 0.0
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         # Calculate validation loss
         if "loss" in val_data:
             assert isinstance(val_data["loss"], torch.Tensor)
@@ -239,16 +239,16 @@ def run_train(
     for epoch in range(start_epoch, cfg.training.epochs):
         set_seed(
             cfg.environment._seed
-            + epoch * cfg.environment._world_size * cfg.environment.number_of_workers
-            + cfg.environment._local_rank * cfg.environment.number_of_workers
+            + epoch * accelerator.num_processes * cfg.environment.number_of_workers
+            + accelerator.local_process_index * cfg.environment.number_of_workers
         )
-        if cfg.environment._local_rank == 0:
+        if accelerator.local_process_index == 0:
             logger.info(f"Training Epoch: {epoch + 1} / {cfg.training.epochs}")
 
         tqdm_out = TqdmToLogger(logger, level=logging.INFO)
         progress_bar = tqdm(
             total=epoch_steps,
-            disable=cfg.environment._local_rank != 0,
+            disable=accelerator.local_process_index != 0,
             file=tqdm_out,
             ascii=True,
             desc="train loss",
@@ -262,12 +262,12 @@ def run_train(
         for itr, data in enumerate(train_dataloader):
             num_updates += 1
             cfg.environment._curr_step += (
-                cfg.training.batch_size * cfg.environment._world_size
+                cfg.training.batch_size * accelerator.num_processes
             )
 
             # Batch to device
             batch = cfg.dataset.dataset_class.batch_to_device(
-                data, cfg.environment._device
+                data, accelerator.device
             )
 
             # NLP augmentation
@@ -275,7 +275,7 @@ def run_train(
                 batch = nlp_augment(batch)
 
             # Plot first batch
-            if epoch == 0 and itr == 0 and cfg.environment._local_rank == 0:
+            if epoch == 0 and itr == 0 and accelerator.local_process_index == 0:
                 plot = cfg.logging.plots_class.plot_batch(batch=batch, cfg=cfg)
                 log_plot(cfg, plot, "train_data")
 
@@ -297,7 +297,7 @@ def run_train(
                     logger.debug("Evaluation: Score from reward model")
                     # tokenize prompt & output internally
                     if cfg.training.offload_reward_model:
-                        reward_model.to(cfg.environment._device)
+                        reward_model.to(accelerator.device)
                     with accelerator.autocast():
                         scores = reward_model.get_score(
                             batch["reward_model_prompt_text"],
@@ -378,7 +378,7 @@ def run_train(
                 if scheduler is not None:
                     scheduler.step()
 
-            if cfg.environment._local_rank == 0:
+            if accelerator.local_process_index == 0:
                 if cfg.training.use_rlhf:
                     # additional RLHF specific logging
                     for key in output_dict.keys():
@@ -441,12 +441,12 @@ def run_train(
                     val_dataloader=val_dataloader,
                     val_df=val_df,
                 )
-                if cfg.environment._local_rank == 0:
+                if accelerator.local_process_index == 0:
                     if (
                         objective_op(val_metric, best_val_metric)
                         and cfg.training.save_best_checkpoint
                     ):
-                        if cfg.environment._local_rank == 0:
+                        if accelerator.local_process_index == 0:
                             checkpoint_path = cfg.output_directory
                             logger.info(
                                 f"Saving best model checkpoint: "
@@ -464,12 +464,12 @@ def run_train(
 
         accelerator.wait_for_everyone()
 
-        if cfg.environment._local_rank == 0:
+        if accelerator.local_process_index == 0:
             cfg.logging._logger.log(
                 "internal", "epoch", epoch + 1, step=cfg.environment._curr_step
             )
 
-    if cfg.environment._distributed:
+    if accelerator.distributed_type:
         torch.distributed.barrier()
 
     return val_loss, val_metric
@@ -555,30 +555,23 @@ def run(cfg: Any) -> None:
         kwargs_handlers=[ddp_kwargs, init_process_kwargs],
     )
 
-    cfg.environment._local_rank = accelerator.local_process_index
-    cfg.environment._rank = accelerator.process_index
-    cfg.environment._device = accelerator.device
-    cfg.environment._distributed = accelerator.distributed_type
-    logger.info(cfg.environment._distributed)
-    cfg.environment._device = accelerator.device
-    cfg.environment._world_size = accelerator.num_processes
-
-    if cfg.environment._distributed != DistributedType.NO:
+    logger.info(accelerator.distributed_type)
+    if accelerator.distributed_type != DistributedType.NO:
         logger.info(
             f"Training in distributed mode with multiple processes, "
-            f"1 GPU per process. Process {cfg.environment._rank}, "
-            f"total: {cfg.environment._world_size} "
-            f"local rank: {cfg.environment._local_rank}."
+            f"1 GPU per process. Process {accelerator.process_index}, "
+            f"total: {accelerator.num_processes} "
+            f"local rank: {accelerator.local_process_index}."
         )
 
     set_seed(cfg.environment._seed)
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         logger.info(f"Global random seed: {cfg.environment._seed}")
 
     cfg = set_environment(cfg)
 
     # we need to get train dataframe and number of labels if not set or in training mode
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         logger.info("Preparing the data...")
     train_df, val_df = get_data(cfg)
 
@@ -594,14 +587,14 @@ def run(cfg: Any) -> None:
         cfg.prediction.metric = "BLEU"
 
     # prepare data
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         logger.info("Preparing train and validation data")
     train_dataset = get_train_dataset(train_df=train_df, cfg=cfg)
     val_dataset = get_val_dataset(val_df=val_df, cfg=cfg)
     train_dataloader = get_train_dataloader(train_ds=train_dataset, cfg=cfg)
     val_dataloader = get_val_dataloader(val_ds=val_dataset, cfg=cfg)
 
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         total_training_steps = (
             cfg.training.epochs * len(train_dataloader) * cfg.training.batch_size
         )
@@ -616,11 +609,11 @@ def run(cfg: Any) -> None:
             len(val_dataloader)
             * (num_eval_epochs + int(cfg.training.evaluate_before_training))
             * val_batch_size
-            * cfg.environment._world_size
+            * accelerator.num_processes
         )
 
     # Prepare model
-    with torch.device(cfg.environment._device):
+    with torch.device(accelerator.device):
         model = cfg.architecture.model_class(cfg)
 
         if cfg.training.use_rlhf:
@@ -635,12 +628,12 @@ def run(cfg: Any) -> None:
             # Do not load strictly if continue training from the previous experiment
             load_checkpoint(cfg, model, strict=cfg.training.epochs == -1)
 
-    model.to(cfg.environment._device)
+    model.to(accelerator.device)
     if cfg.training.use_rlhf:
         if cfg.training.offload_reward_model:
             reward_model.to("cpu")
         else:
-            reward_model.to(cfg.environment._device)
+            reward_model.to(accelerator.device)
 
     if cfg.architecture.force_embedding_gradients and cfg.training.use_rlhf:
         raise LLMTrainingException(
@@ -654,11 +647,8 @@ def run(cfg: Any) -> None:
                     param.requires_grad = True
                     param.data = param.data.float()
 
-    if cfg.environment._distributed:
-        model = wrap_model_distributed(model, cfg, cfg.environment.use_fsdp)
-
     if cfg.environment.compile_model:
-        if cfg.environment._distributed != DistributedType.NO:
+        if accelerator.distributed_type != DistributedType.NO:
             model.module.backbone = torch.compile(model.module.backbone)
         else:
             model.backbone = torch.compile(model.backbone)
@@ -675,7 +665,7 @@ def run(cfg: Any) -> None:
     gc.collect()
 
     global_start_time = time.time()
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         # re-save cfg
         save_config_yaml(f"{cfg.output_directory}/cfg.yaml", cfg)
 
@@ -712,12 +702,12 @@ def run(cfg: Any) -> None:
     model = accelerator.unwrap_model(model)
 
     # reset external logging
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         cfg.logging._logger.reset_external()
 
     experiment_path = f"{cfg.output_directory}"
 
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         if not cfg.training.save_best_checkpoint:
             checkpoint_path = cfg.output_directory
 
@@ -731,10 +721,10 @@ def run(cfg: Any) -> None:
 
         save_config_yaml(f"{cfg.output_directory}/cfg.yaml", cfg)
 
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         save_prediction_outputs(cfg.experiment_name, experiment_path)
 
-    if cfg.environment._local_rank == 0:
+    if accelerator.local_process_index == 0:
         flag_path = os.path.join(cfg.output_directory, "flags.json")
         write_flag(flag_path, "status", "finished")
         time_took = time.time() - global_start_time

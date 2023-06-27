@@ -231,7 +231,7 @@ class PPOTrainer(PyTorchModelHubMixin):
         else:
             self.kl_ctl = FixedKLController(cfg)
 
-        self.current_device = self.cfg.environment._device
+        self.current_device = self.accelerator.device
 
         # init the current step
         self.current_step = 0
@@ -447,7 +447,7 @@ class PPOTrainer(PyTorchModelHubMixin):
                         self.optimizer.step()
                         self.optimizer.zero_grad(set_to_none=True)
 
-                if self.cfg.environment._distributed:
+                if self.accelerator.distributed_type:
                     torch.cuda.synchronize(device=self.current_device)
 
                 del logprobs, logits, vpreds

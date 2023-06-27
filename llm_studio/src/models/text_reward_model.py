@@ -111,7 +111,7 @@ class RewardModel(nn.Module):
 
         self.cfg = cfg
         self.model_name = cfg.training.reward_model
-        self.device = cfg.environment._device
+        self.device = accelerator.device
         self.model = AutoModelForSequenceClassification.from_pretrained(
             self.model_name,
             torch_dtype=torch.float16,

@@ -128,7 +128,7 @@ def get_fill_columns(cfg: Any) -> List[str]:
 def read_dataframe_drop_missing_labels(path: str, cfg: Any) -> pd.DataFrame:
     input_cols = list(cfg.dataset.dataset_class.get_input_columns(cfg))
     non_missing_columns = input_cols + [cfg.dataset.answer_column]
-    verbose = cfg.environment._local_rank == 0
+    verbose = accelerator.local_process_index == 0
     fill_columns = get_fill_columns(cfg)
     df = read_dataframe(
         path,
@@ -188,7 +188,7 @@ def get_data(cfg: Any) -> Tuple[pd.DataFrame, pd.DataFrame]:
             cfg.dataset.validation_dataframe, cfg
         )
     elif cfg.dataset.validation_strategy == "automatic":
-        if cfg.environment._local_rank == 0:
+        if accelerator.local_process_index == 0:
             logger.info("Setting up automatic validation split...")
         df = read_dataframe_drop_missing_labels(cfg.dataset.train_dataframe, cfg)
         train_df, val_df = train_test_split(
@@ -246,7 +246,7 @@ def get_train_dataset(train_df: pd.DataFrame, cfg: Any, verbose=True):
         Train Dataset
     """
 
-    if cfg.environment._local_rank == 0 and verbose:
+    if accelerator.local_process_index == 0 and verbose:
         logger.info("Loading train dataset...")
 
     train_dataset = cfg.dataset.dataset_class(df=train_df, cfg=cfg, mode="train")
@@ -289,7 +289,7 @@ def get_train_dataloader(train_ds: Any, cfg: Any, verbose=True):
         worker_init_fn=worker_init_fn,
     )
 
-    if cfg.environment._local_rank == 0 and verbose:
+    if accelerator.local_process_index == 0 and verbose:
         logger.info(f"Number of observations in train dataset: {len(train_ds)}")
 
     return train_dataloader
@@ -307,7 +307,7 @@ def get_val_dataset(val_df: pd.DataFrame, cfg: Any, verbose: bool = True):
         Validation Dataset
     """
 
-    if verbose and cfg.environment._local_rank == 0:
+    if verbose and accelerator.local_process_index == 0:
         logger.info("Loading validation dataset...")
     val_dataset = cfg.dataset.dataset_class(df=val_df, cfg=cfg, mode="validation")
 
@@ -339,7 +339,7 @@ def get_val_dataloader(val_ds: Any, cfg: Any, verbose: bool = True):
         worker_init_fn=worker_init_fn,
     )
 
-    if verbose and cfg.environment._local_rank == 0:
+    if verbose and accelerator.local_process_index == 0:
         logger.info(f"Number of observations in validation dataset: {len(val_ds)}")
 
     return val_dataloader

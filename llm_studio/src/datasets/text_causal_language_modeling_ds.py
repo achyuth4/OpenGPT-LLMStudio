@@ -86,7 +86,7 @@ class CustomDataset(Dataset):
                         [id not in self.parent_ids for id in self.df["id"].values]
                     ]
 
-        if self.cfg.environment._local_rank == 0:
+        if self.accelerator.local_process_index == 0:
             logger.info(f"Sample prompt: {self.prompts[0]}")
 
     @staticmethod

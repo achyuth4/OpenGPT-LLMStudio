@@ -420,7 +420,7 @@ def train_one_batch(accelerator: Accelerator,
     return output_dict
 
 
-def train_rlhf_one_batch(accelerator, batch, cfg, model, ppo_trainer, reward_model, train_dataloader):
+def train_rlhf_one_batch(accelerator, batch, cfg, model, ppo_trainer: PPOTrainer, reward_model, train_dataloader):
     with torch.no_grad():
         logger.debug("Rollout: Generating response from active model")
         output_dict = {}

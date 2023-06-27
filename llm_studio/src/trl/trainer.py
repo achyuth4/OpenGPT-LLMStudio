@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 import torch
 import torch.nn.functional as F
+from accelerate import accelerator
 from datasets import Dataset
 from huggingface_hub import PyTorchModelHubMixin
 from torch.cuda.amp import autocast
@@ -447,11 +448,8 @@ class PPOTrainer(PyTorchModelHubMixin):
                         self.optimizer.step()
                         self.optimizer.zero_grad(set_to_none=True)
 
-                if self.accelerator.distributed_type:
-                    torch.cuda.synchronize(device=self.current_device)
-
+                accelerator.wait_for_everyone()
                 del logprobs, logits, vpreds
-
                 all_stats.append(train_stats)
 
         timing["time/ppo/ppo_steps"] = time.time() - t

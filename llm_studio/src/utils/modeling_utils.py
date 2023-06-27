@@ -151,7 +151,7 @@ def wrap_model_distributed(model: torch.nn.Module, cfg: Any, fsdp: bool):
             auto_wrap_policy=auto_wrap_policy,
             mixed_precision=mixed_precision_policy,
             device_id=cfg.environment._local_rank,
-            # use_orig_params=False
+            use_orig_params=True,
             limit_all_gathers=True,
         )
     else:

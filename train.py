@@ -489,7 +489,7 @@ def run(cfg: Any) -> None:
     Args:
         cfg: config object with all the hyperparameters
     """
-
+    logger.info(f"torch version: {torch.__version__}")
     os.makedirs(cfg.output_directory, exist_ok=True)
 
     # Force evaluation if user trains 0 epochs

@@ -407,7 +407,7 @@ def create_nlp_backbone(cfg, model_class=AutoModel, kwargs=None) -> Any:
     config.hidden_dropout_prob = cfg.architecture.intermediate_dropout
     config.attention_probs_dropout_prob = cfg.architecture.intermediate_dropout
 
-    if cfg.environment.use_fsdp or cfg.environment.use_deepspeed:
+    if cfg.environment.use_deepspeed:
         # FSDP and DeepSpeed do not support gradient checkpointing
         # FSDP and DeppSpeed do not support quantization below fp16
         cfg.architecture.backbone_dtype = "float16"  # TODO: Add warning

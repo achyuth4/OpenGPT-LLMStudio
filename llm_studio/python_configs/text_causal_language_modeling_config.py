@@ -378,7 +378,6 @@ class ConfigNLPCausalLMEnvironment(DefaultConfig):
     mixed_precision: bool = True
 
     compile_model: bool = False
-    use_fsdp: bool = False
     use_deepspeed: bool = False
 
     find_unused_parameters: bool = False

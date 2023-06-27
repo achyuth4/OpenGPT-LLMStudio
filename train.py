@@ -509,19 +509,6 @@ def run(cfg: Any) -> None:
     init_process_kwargs = InitProcessGroupKwargs(
         backend="nccl", init_method="env://", timeout=timedelta(seconds=800)
     )
-    if cfg.environment.use_fsdp:
-        mixed_precision_policy = MixedPrecision(
-            param_dtype=torch.float16,
-            reduce_dtype=torch.float16,
-            buffer_dtype=torch.float16,
-        )
-        fsdp_plugin = FullyShardedDataParallelPlugin(
-            cpu_offload=CPUOffload(offload_params=True),
-            mixed_precision_policy=mixed_precision_policy,
-        )
-    else:
-        fsdp_plugin = None
-
     if cfg.environment.use_deepspeed:
         deepspeed_plugin = DeepSpeedPlugin(
             # hf_ds_config=deepspeed_config,
@@ -553,7 +540,6 @@ def run(cfg: Any) -> None:
         mixed_precision = "no"
 
     accelerator = Accelerator(
-        fsdp_plugin=fsdp_plugin,
         deepspeed_plugin=deepspeed_plugin,
         mixed_precision=mixed_precision,  # ["no", "fp16", "bf16", "fp8"]
         gradient_accumulation_steps=cfg.training.grad_accumulation,

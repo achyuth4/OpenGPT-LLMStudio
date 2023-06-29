@@ -1,6 +1,6 @@
 import dataclasses
 from functools import partial
-from typing import Any, Optional, List, Tuple, Type
+from typing import Any, Optional, List, Tuple, Type, Union
 
 from h2o_wave import Q, ui
 
@@ -68,7 +68,7 @@ def get_ui_elements(
         if not (_check_dependencies(cfg=cfg, pre=pre, k=config_item_name, q=q)):
             continue
 
-        if not _is_visible(k=config_item_name, cfg=cfg, q=q) and q.client[f"{pre}/cfg_mode/from_cfg"]:
+        if (not _is_visible(k=config_item_name, cfg=cfg, q=q)) and q.client[f"{pre}/cfg_mode/from_cfg"]:
             q.client[f"{pre}/cfg/{config_item_name}"] = config_item_value
             continue
 
@@ -143,6 +143,53 @@ def get_ui_elements(
     q.client[f"{pre}/prev_dataset"] = q.client[f"{pre}/dataset"]
 
     return items
+
+
+def parse_ui_elements(
+        cfg: Any, q: Q, limit: Union[List, str] = "", pre: str = ""
+) -> Any:
+    """Sets configuration settings with arguments from app
+
+    Args:
+        cfg: configuration
+        q: Q
+        limit: optional list of keys to limit
+        pre: prefix for keys
+
+    Returns:
+        Configuration with settings overwritten from arguments
+    """
+
+    cfg_dict = cfg.__dict__
+    type_annotations = cfg.get_annotations()
+    for k, v in cfg_dict.items():
+        if k.startswith("_") or cfg._get_visibility(k) == -1:
+            continue
+
+        if (
+                len(limit) > 0
+                and k not in limit
+                and type_annotations[k] in KNOWN_TYPE_ANNOTATIONS
+        ):
+            continue
+
+        elif type_annotations[k] in KNOWN_TYPE_ANNOTATIONS:
+            value = q.client[f"{pre}{k}"]
+
+            if type_annotations[k] == Tuple[str, ...]:
+                if isinstance(value, str):
+                    value = [value]
+                value = tuple(value)
+            if type_annotations[k] == str and type(value) == list:
+                # fix for combobox outputting custom values as list in wave 0.22
+                value = value[0]
+            setattr(cfg, k, value)
+        elif dataclasses.is_dataclass(v):
+            setattr(cfg, k, parse_ui_elements(cfg=v, q=q, limit=limit, pre=pre))
+        else:
+            raise _get_type_annotation_error(v, type_annotations[k])
+
+    return cfg
 
 
 def get_dataset_elements(cfg: Any, q: Q) -> List:
@@ -342,7 +389,7 @@ def _get_ui_element(
         ]
     elif type_annotation in (str, Tuple[str, ...]):
         if poss_values is None:
-            val = q.client[pre + config_item_name] if q.client[pre + config_item_name] is not None else config_item_value
+            val = config_item_value
 
             title_label = make_label(config_item_name)
 
@@ -376,7 +423,8 @@ def _get_ui_element(
                     " `allow_custom=True` is not supported at the same time."
                 )
 
-            config_item_value = q.client[pre + config_item_name] if q.client[pre + config_item_name] is not None else config_item_value
+            config_item_value = q.client[pre + config_item_name] if q.client[
+                                                                        pre + config_item_name] is not None else config_item_value
             if isinstance(config_item_value, str):
                 config_item_value = [config_item_value]
 

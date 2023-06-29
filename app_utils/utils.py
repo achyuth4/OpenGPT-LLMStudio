@@ -1,6 +1,5 @@
 import asyncio
 import collections
-import dataclasses
 import glob
 import json
 import logging
@@ -33,14 +32,12 @@ from llm_studio.python_configs.text_causal_language_modeling_config import (
     ConfigProblemBase,
 )
 from llm_studio.src.utils.config_utils import (
-    _get_type_annotation_error,
     load_config_yaml,
     parse_cfg_dataclass,
     save_config_yaml,
 )
 from llm_studio.src.utils.data_utils import is_valid_data_frame
 from llm_studio.src.utils.export_utils import get_size_str
-from llm_studio.src.utils.type_annotations import KNOWN_TYPE_ANNOTATIONS
 
 from .config import default_cfg
 
@@ -570,53 +567,6 @@ def get_model_types(problem_type: str) -> List[Tuple[str, str]]:
             model_types.append((c, make_label(c[1:])))
 
     return model_types
-
-
-def parse_ui_elements(
-    cfg: Any, q: Q, limit: Union[List, str] = "", pre: str = ""
-) -> Any:
-    """Sets configuration settings with arguments from app
-
-    Args:
-        cfg: configuration
-        q: Q
-        limit: optional list of keys to limit
-        pre: prefix for keys
-
-    Returns:
-        Configuration with settings overwritten from arguments
-    """
-
-    cfg_dict = cfg.__dict__
-    type_annotations = cfg.get_annotations()
-    for k, v in cfg_dict.items():
-        if k.startswith("_") or cfg._get_visibility(k) == -1:
-            continue
-
-        if (
-            len(limit) > 0
-            and k not in limit
-            and type_annotations[k] in KNOWN_TYPE_ANNOTATIONS
-        ):
-            continue
-
-        elif type_annotations[k] in KNOWN_TYPE_ANNOTATIONS:
-            value = q.client[f"{pre}{k}"]
-
-            if type_annotations[k] == Tuple[str, ...]:
-                if isinstance(value, str):
-                    value = [value]
-                value = tuple(value)
-            if type_annotations[k] == str and type(value) == list:
-                # fix for combobox outputting custom values as list in wave 0.22
-                value = value[0]
-            setattr(cfg, k, value)
-        elif dataclasses.is_dataclass(v):
-            setattr(cfg, k, parse_ui_elements(cfg=v, q=q, limit=limit, pre=pre))
-        else:
-            raise _get_type_annotation_error(v, type_annotations[k])
-
-    return cfg
 
 
 def get_experiment_status(path: str) -> Tuple[str, str]:

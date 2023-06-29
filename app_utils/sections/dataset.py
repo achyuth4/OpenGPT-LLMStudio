@@ -28,12 +28,11 @@ from app_utils.utils import (
     get_unique_dataset_name,
     kaggle_download,
     local_download,
-    parse_ui_elements,
     remove_temp_files,
     s3_download,
     s3_file_options, make_label,
 )
-from ..cfg_parsing_utils import get_dataset_elements
+from ..cfg_parsing_utils import get_dataset_elements, parse_ui_elements
 from app_utils.wave_utils import busy_dialog, ui_table_from_df
 from llm_studio.src.utils.config_utils import (
     load_config_py,

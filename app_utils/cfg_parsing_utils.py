@@ -12,7 +12,240 @@ from llm_studio.src.utils.data_utils import read_dataframe
 from llm_studio.src.utils.type_annotations import KNOWN_TYPE_ANNOTATIONS
 
 
-def get_ui_element(
+def get_ui_elements(
+        cfg: Any,
+        q: Q,
+        limit: Optional[List[str]] = None,
+        pre: str = "experiment/start",
+) -> List:
+    """For a given configuration setting return the according ui components.
+
+    Args:
+        cfg: configuration settings
+        q: Q
+        limit: optional list of keys to limit
+        pre: prefix for client keys
+
+    Returns:
+        List of ui elements
+    """
+    items = []
+
+    cfg_dict = cfg.__dict__
+    type_annotations = cfg.get_annotations()
+
+    cfg_dict = {key: cfg_dict[key] for key in cfg._get_order()}
+
+    for k, v in cfg_dict.items():
+        if "api" in k:
+            password = True
+        else:
+            password = False
+
+        if k.startswith("_") or cfg._get_visibility(k) < 0:
+            if q.client[f"{pre}/cfg_mode/from_cfg"]:
+                q.client[f"{pre}/cfg/{k}"] = v
+            continue
+        else:
+            type_annotation = type_annotations[k]
+            poss_values, v = cfg._get_possible_values(
+                field=k,
+                value=v,
+                type_annotation=type_annotation,
+                mode=q.client[f"{pre}/cfg_mode/mode"],
+                dataset_fn=partial(get_dataset, q=q, limit=limit, pre=pre),
+            )
+
+            if k in default_cfg.dataset_keys:
+                # reading dataframe
+                if k == "train_dataframe" and (v != ""):
+                    q.client[f"{pre}/cfg/dataframe"] = read_dataframe(v, meta_only=True)
+                q.client[f"{pre}/cfg/{k}"] = v
+            elif k in default_cfg.dataset_extra_keys:
+                _, v = get_dataset(k, v, q=q, limit=limit, pre=pre)
+                q.client[f"{pre}/cfg/{k}"] = v
+            elif q.client[f"{pre}/cfg_mode/from_cfg"]:
+                q.client[f"{pre}/cfg/{k}"] = v
+        # Overwrite current default values with user_settings
+        if q.client[f"{pre}/cfg_mode/from_default"] and f"default_{k}" in q.client:
+            q.client[f"{pre}/cfg/{k}"] = q.client[f"default_{k}"]
+
+        if not (_check_dependencies(cfg=cfg, pre=pre, k=k, q=q)):
+            continue
+
+        if not _is_visible(k=k, cfg=cfg, q=q):
+            if type_annotation not in KNOWN_TYPE_ANNOTATIONS:
+                _ = get_ui_elements(cfg=v, q=q, limit=limit, pre=pre)
+            elif q.client[f"{pre}/cfg_mode/from_cfg"]:
+                q.client[f"{pre}/cfg/{k}"] = v
+
+            continue
+
+        tooltip = cfg._get_tooltips(k)
+
+        trigger = False
+        q.client[f"{pre}/trigger_ks"] = ["train_dataframe"]
+        q.client[f"{pre}/trigger_ks"] += cfg._get_nesting_triggers()
+        if k in q.client[f"{pre}/trigger_ks"]:
+            trigger = True
+
+        if type_annotation in KNOWN_TYPE_ANNOTATIONS:
+            if limit is not None and k not in limit:
+                continue
+
+            t = _get_ui_element(
+                config_name=k,
+                config_value=v,
+                poss_values=poss_values,
+                type_annotation=type_annotation,
+                tooltip=tooltip,
+                password=password,
+                trigger=trigger,
+                q=q,
+                pre=f"{pre}/cfg/",
+            )
+        elif dataclasses.is_dataclass(v):
+            if limit is not None and k in limit:
+                elements_group = get_ui_elements(cfg=v, q=q, limit=None, pre=pre)
+            else:
+                elements_group = get_ui_elements(cfg=v, q=q, limit=limit, pre=pre)
+
+            if k == "dataset" and pre != "experiment/start":
+                # get all the datasets available
+                df_datasets = q.client.app_db.get_datasets_df()
+                if not q.client[f"{pre}/dataset"]:
+                    if len(df_datasets) >= 1:
+                        q.client[f"{pre}/dataset"] = str(df_datasets["id"].iloc[-1])
+                    else:
+                        q.client[f"{pre}/dataset"] = "1"
+
+                elements_group = [
+                                     ui.dropdown(
+                                         name=f"{pre}/dataset",
+                                         label="Dataset",
+                                         required=True,
+                                         value=q.client[f"{pre}/dataset"],
+                                         choices=[
+                                             ui.choice(str(row["id"]), str(row["name"]))
+                                             for _, row in df_datasets.iterrows()
+                                         ],
+                                         trigger=True,
+                                         tooltip=tooltip,
+                                     )
+                                 ] + elements_group
+
+            if len(elements_group) > 0:
+                t = [
+                    ui.separator(
+                        name=k + "_expander", label=make_label(k, appendix=" settings")
+                    )
+                ]
+            else:
+                t = []
+
+            t += elements_group
+        else:
+            raise _get_type_annotation_error(v, type_annotations[k])
+
+        items += t
+
+    q.client[f"{pre}/prev_dataset"] = q.client[f"{pre}/dataset"]
+
+    return items
+
+
+def get_dataset_elements(cfg: Any, q: Q) -> List:
+    """For a given configuration setting return the according dataset ui components.
+
+    Args:
+        cfg: configuration settings
+        q: Q
+
+    Returns:
+        List of ui elements
+    """
+
+    cfg_dict = cfg.__dict__
+    type_annotations = cfg.get_annotations()
+
+    cfg_dict = {key: cfg_dict[key] for key in cfg._get_order()}
+
+    items = []
+    for config_name, config_value in cfg_dict.items():
+        # Show some fields only during dataset import
+        if config_name.startswith("_") or cfg._get_visibility(config_name) == -1:
+            continue
+
+        if not (
+                _check_dependencies(
+                    cfg=cfg, pre="dataset/import", k=config_name, q=q, dataset_import=True
+                )
+        ):
+            continue
+        tooltip = cfg._get_tooltips(config_name)
+
+        if type_annotations[config_name] in KNOWN_TYPE_ANNOTATIONS:
+            if config_name in default_cfg.dataset_keys:
+                dataset = cfg_dict.copy()
+                dataset["path"] = q.client["dataset/import/path"]
+
+                for kk, vv in q.client["dataset/import/cfg"].__dict__.items():
+                    dataset[kk] = vv
+
+                for trigger_key in default_cfg.dataset_trigger_keys:
+                    if q.client[f"dataset/import/cfg/{trigger_key}"] is not None:
+                        dataset[trigger_key] = q.client[
+                            f"dataset/import/cfg/{trigger_key}"
+                        ]
+                if (
+                        q.client["dataset/import/cfg/data_format"] is not None
+                        and config_name == "data_format"
+                ):
+                    config_value = q.client["dataset/import/cfg/data_format"]
+
+                dataset["dataframe"] = q.client["dataset/import/cfg/dataframe"]
+
+                type_annotation = type_annotations[config_name]
+                poss_values, config_value = cfg._get_possible_values(
+                    field=config_name,
+                    value=config_value,
+                    type_annotation=type_annotation,
+                    mode="train",
+                    dataset_fn=lambda k, v: (
+                        dataset,
+                        dataset[k] if k in dataset else v,
+                    ),
+                )
+
+                if config_name == "train_dataframe" and config_value != "None":
+                    q.client["dataset/import/cfg/dataframe"] = read_dataframe(config_value)
+
+                q.client[f"dataset/import/cfg/{config_name}"] = config_value
+
+                items_list = _get_ui_element(
+                    config_name,
+                    config_value,
+                    poss_values,
+                    type_annotation,
+                    tooltip=tooltip,
+                    password=False,
+                    trigger=(config_name in default_cfg.dataset_trigger_keys or config_name == "data_format"),
+                    q=q,
+                    pre="dataset/import/cfg/",
+                )
+            else:
+                items_list = []
+        elif dataclasses.is_dataclass(config_value):
+            items_list = get_dataset_elements(cfg=config_value, q=q)
+        else:
+            raise _get_type_annotation_error(config_value, type_annotations[config_name])
+
+        items += items_list
+
+    return items
+
+
+def _get_ui_element(
         config_name: str,
         config_value: Any,
         poss_values: Any,
@@ -201,7 +434,26 @@ def get_ui_element(
     return items_list
 
 
-def check_dependencies(cfg: Any, pre: str, k: str, q: Q, dataset_import: bool = False):
+def _is_visible(k: str, cfg: Any, q: Q) -> bool:
+    """Returns a flag whether a given key should be visible on UI.
+
+    Args:
+        k: name of the hyperparameter
+        cfg: configuration settings,
+        q: Q
+    Returns:
+        List of ui elements
+    """
+
+    visibility = 1
+
+    if cfg._get_visibility(k) > visibility:
+        return False
+
+    return True
+
+
+def _check_dependencies(cfg: Any, pre: str, k: str, q: Q, dataset_import: bool = False):
     """Checks all dependencies for a given key
 
     Args:
@@ -238,256 +490,3 @@ def check_dependencies(cfg: Any, pre: str, k: str, q: Q, dataset_import: bool = 
         return all_deps > 0
 
     return True
-
-
-def is_visible(k: str, cfg: Any, q: Q) -> bool:
-    """Returns a flag whether a given key should be visible on UI.
-
-    Args:
-        k: name of the hyperparameter
-        cfg: configuration settings,
-        q: Q
-    Returns:
-        List of ui elements
-    """
-
-    visibility = 1
-
-    if cfg._get_visibility(k) > visibility:
-        return False
-
-    return True
-
-
-def get_ui_elements(
-        cfg: Any,
-        q: Q,
-        limit: Optional[List[str]] = None,
-        pre: str = "experiment/start",
-) -> List:
-    """For a given configuration setting return the according ui components.
-
-    Args:
-        cfg: configuration settings
-        q: Q
-        limit: optional list of keys to limit
-        pre: prefix for client keys
-        parent_cfg: parent config class.
-
-    Returns:
-        List of ui elements
-    """
-    items = []
-
-    cfg_dict = cfg.__dict__
-    type_annotations = cfg.get_annotations()
-
-    cfg_dict = {key: cfg_dict[key] for key in cfg._get_order()}
-
-    for k, v in cfg_dict.items():
-        if "api" in k:
-            password = True
-        else:
-            password = False
-
-        if k.startswith("_") or cfg._get_visibility(k) < 0:
-            if q.client[f"{pre}/cfg_mode/from_cfg"]:
-                q.client[f"{pre}/cfg/{k}"] = v
-            continue
-        else:
-            type_annotation = type_annotations[k]
-            poss_values, v = cfg._get_possible_values(
-                field=k,
-                value=v,
-                type_annotation=type_annotation,
-                mode=q.client[f"{pre}/cfg_mode/mode"],
-                dataset_fn=partial(get_dataset, q=q, limit=limit, pre=pre),
-            )
-
-            if k in default_cfg.dataset_keys:
-                # reading dataframe
-                if k == "train_dataframe" and (v != ""):
-                    q.client[f"{pre}/cfg/dataframe"] = read_dataframe(v, meta_only=True)
-                q.client[f"{pre}/cfg/{k}"] = v
-            elif k in default_cfg.dataset_extra_keys:
-                _, v = get_dataset(k, v, q=q, limit=limit, pre=pre)
-                q.client[f"{pre}/cfg/{k}"] = v
-            elif q.client[f"{pre}/cfg_mode/from_cfg"]:
-                q.client[f"{pre}/cfg/{k}"] = v
-        # Overwrite current default values with user_settings
-        if q.client[f"{pre}/cfg_mode/from_default"] and f"default_{k}" in q.client:
-            q.client[f"{pre}/cfg/{k}"] = q.client[f"default_{k}"]
-
-        if not (check_dependencies(cfg=cfg, pre=pre, k=k, q=q)):
-            continue
-
-        if not is_visible(k=k, cfg=cfg, q=q):
-            if type_annotation not in KNOWN_TYPE_ANNOTATIONS:
-                _ = get_ui_elements(cfg=v, q=q, limit=limit, pre=pre)
-            elif q.client[f"{pre}/cfg_mode/from_cfg"]:
-                q.client[f"{pre}/cfg/{k}"] = v
-
-            continue
-
-        tooltip = cfg._get_tooltips(k)
-
-        trigger = False
-        q.client[f"{pre}/trigger_ks"] = ["train_dataframe"]
-        q.client[f"{pre}/trigger_ks"] += cfg._get_nesting_triggers()
-        if k in q.client[f"{pre}/trigger_ks"]:
-            trigger = True
-
-        if type_annotation in KNOWN_TYPE_ANNOTATIONS:
-            if limit is not None and k not in limit:
-                continue
-
-            t = get_ui_element(
-                config_name=k,
-                config_value=v,
-                poss_values=poss_values,
-                type_annotation=type_annotation,
-                tooltip=tooltip,
-                password=password,
-                trigger=trigger,
-                q=q,
-                pre=f"{pre}/cfg/",
-            )
-        elif dataclasses.is_dataclass(v):
-            if limit is not None and k in limit:
-                elements_group = get_ui_elements(cfg=v, q=q, limit=None, pre=pre)
-            else:
-                elements_group = get_ui_elements(cfg=v, q=q, limit=limit, pre=pre)
-
-            if k == "dataset" and pre != "experiment/start":
-                # get all the datasets available
-                df_datasets = q.client.app_db.get_datasets_df()
-                if not q.client[f"{pre}/dataset"]:
-                    if len(df_datasets) >= 1:
-                        q.client[f"{pre}/dataset"] = str(df_datasets["id"].iloc[-1])
-                    else:
-                        q.client[f"{pre}/dataset"] = "1"
-
-                elements_group = [
-                                     ui.dropdown(
-                                         name=f"{pre}/dataset",
-                                         label="Dataset",
-                                         required=True,
-                                         value=q.client[f"{pre}/dataset"],
-                                         choices=[
-                                             ui.choice(str(row["id"]), str(row["name"]))
-                                             for _, row in df_datasets.iterrows()
-                                         ],
-                                         trigger=True,
-                                         tooltip=tooltip,
-                                     )
-                                 ] + elements_group
-
-            if len(elements_group) > 0:
-                t = [
-                    ui.separator(
-                        name=k + "_expander", label=make_label(k, appendix=" settings")
-                    )
-                ]
-            else:
-                t = []
-
-            t += elements_group
-        else:
-            raise _get_type_annotation_error(v, type_annotations[k])
-
-        items += t
-
-    q.client[f"{pre}/prev_dataset"] = q.client[f"{pre}/dataset"]
-
-    return items
-
-
-def get_dataset_elements(cfg: Any, q: Q) -> List:
-    """For a given configuration setting return the according dataset ui components.
-
-    Args:
-        cfg: configuration settings
-        q: Q
-
-    Returns:
-        List of ui elements
-    """
-
-    cfg_dict = cfg.__dict__
-    type_annotations = cfg.get_annotations()
-
-    cfg_dict = {key: cfg_dict[key] for key in cfg._get_order()}
-
-    items = []
-    for config_name, config_value in cfg_dict.items():
-        # Show some fields only during dataset import
-        if config_name.startswith("_") or cfg._get_visibility(config_name) == -1:
-            continue
-
-        if not (
-                check_dependencies(
-                    cfg=cfg, pre="dataset/import", k=config_name, q=q, dataset_import=True
-                )
-        ):
-            continue
-        tooltip = cfg._get_tooltips(config_name)
-
-        if type_annotations[config_name] in KNOWN_TYPE_ANNOTATIONS:
-            if config_name in default_cfg.dataset_keys:
-                dataset = cfg_dict.copy()
-                dataset["path"] = q.client["dataset/import/path"]
-
-                for kk, vv in q.client["dataset/import/cfg"].__dict__.items():
-                    dataset[kk] = vv
-
-                for trigger_key in default_cfg.dataset_trigger_keys:
-                    if q.client[f"dataset/import/cfg/{trigger_key}"] is not None:
-                        dataset[trigger_key] = q.client[
-                            f"dataset/import/cfg/{trigger_key}"
-                        ]
-                if (
-                        q.client["dataset/import/cfg/data_format"] is not None
-                        and config_name == "data_format"
-                ):
-                    config_value = q.client["dataset/import/cfg/data_format"]
-
-                dataset["dataframe"] = q.client["dataset/import/cfg/dataframe"]
-
-                type_annotation = type_annotations[config_name]
-                poss_values, config_value = cfg._get_possible_values(
-                    field=config_name,
-                    value=config_value,
-                    type_annotation=type_annotation,
-                    mode="train",
-                    dataset_fn=lambda k, v: (
-                        dataset,
-                        dataset[k] if k in dataset else v,
-                    ),
-                )
-
-                if config_name == "train_dataframe" and config_value != "None":
-                    q.client["dataset/import/cfg/dataframe"] = read_dataframe(config_value)
-
-                q.client[f"dataset/import/cfg/{config_name}"] = config_value
-
-                items_list = get_ui_element(
-                    config_name,
-                    config_value,
-                    poss_values,
-                    type_annotation,
-                    tooltip=tooltip,
-                    password=False,
-                    trigger=(config_name in default_cfg.dataset_trigger_keys or config_name == "data_format"),
-                    q=q,
-                    pre="dataset/import/cfg/",
-                )
-            else:
-                items_list = []
-        elif dataclasses.is_dataclass(config_value):
-            items_list = get_dataset_elements(cfg=config_value, q=q)
-        else:
-            raise _get_type_annotation_error(config_value, type_annotations[config_name])
-
-        items += items_list
-
-    return items

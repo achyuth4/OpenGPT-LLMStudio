@@ -1,3 +1,5 @@
+import logging
+from copy import copy
 from typing import Any, List
 
 import torch
@@ -11,15 +13,32 @@ from llm_studio.python_configs.text_causal_language_modeling_config import (
 
 __all__ = ["ConfigUpdater"]
 
+from llm_studio.src.utils.exceptions import ConfigAssertion
+
+logger = logging.getLogger(__name__)
+
 
 class NLPCausalLMConfigUpdater:
     def __init__(self, cfg: ConfigProblemBase):
         self.cfg: ConfigProblemBase = copy_config(cfg)
 
-    def __call__(self, cfg: ConfigProblemBase):
+    def update(self, cfg: ConfigProblemBase):
         self.update_lora_target_layers(cfg)
         self.update_gpu_ids(cfg)
         self.cfg: ConfigProblemBase = copy_config(cfg)
+
+    def check(self, cfg: ConfigProblemBase):
+        gpus = copy(cfg.environment.gpus)
+        self.update_gpu_ids(cfg)
+        if cfg.environment.gpus != gpus:
+            raise ConfigAssertion(f"Gpus available {cfg.environment.gpus} is not consistent with"
+                                  f"Gpus specified in the configuration {gpus}")
+
+        if self.cfg.training.lora_target_modules is None:
+            self.update_lora_target_layers(cfg)
+            if self.cfg.training.lora_target_modules is None:
+                raise ConfigAssertion(f"Please specify LORA target modules!")
+            self.cfg.training.lora_target_modules = None
 
     def update_lora_target_layers(self, cfg):
         if self.cfg.llm_backbone != cfg.llm_backbone:
@@ -50,11 +69,12 @@ class NLPCausalLMConfigUpdater:
                            f"more GPUs available. Automatically setting GPUs to {gpus}")
             cfg.environment.gpus = gpus
 
+
 class ConfigUpdater:
     """ConfigUpdater factory."""
 
     _config_updaters = {
-        "text_causal_language_modeling": NLPCausalLMConfigUpdater,
+        "text_causal_language_modeling_config": NLPCausalLMConfigUpdater,
     }
 
     @classmethod

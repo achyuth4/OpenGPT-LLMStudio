@@ -20,3 +20,7 @@ class LLMTrainingException(Exception):
 
 class LLMResourceException(Exception):
     pass
+
+
+class ConfigAssertion(Exception):
+    pass

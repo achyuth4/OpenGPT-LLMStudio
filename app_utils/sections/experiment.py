@@ -40,6 +40,7 @@ from app_utils.utils import (
     start_experiment,
 )
 from app_utils.wave_utils import busy_dialog, ui_table_from_df, wave_theme
+from llm_studio.python_configs.config_updater import ConfigUpdater
 from llm_studio.src.datasets.text_utils import get_tokenizer
 from llm_studio.src.tooltips import tooltips
 from llm_studio.src.utils.config_utils import (
@@ -452,6 +453,12 @@ async def experiment_start(q: Q) -> None:
     logger.info(f"From cfg {q.client['experiment/start/cfg_mode/from_cfg']}")
     logger.info(f"From default {q.client['experiment/start/cfg_mode/from_default']}")
     logger.info(f"Config file: {q.client['experiment/start/cfg_file']}")
+
+    cfg_updater = q.client["experiment/start/cfg_updater"]
+    if not cfg_updater:
+        q.client["experiment/start/cfg_updater"] = ConfigUpdater.get(q.client["experiment/start/cfg_file"])(q.client["experiment/start/cfg"])
+        cfg_updater = q.client["experiment/start/cfg_updater"]
+    cfg_updater.update(q.client["experiment/start/cfg"])
 
     option_items = get_ui_elements(cfg=q.client["experiment/start/cfg"], q=q)
     items.extend(option_items)

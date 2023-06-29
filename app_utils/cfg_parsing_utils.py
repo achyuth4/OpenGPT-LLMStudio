@@ -1,6 +1,6 @@
 import dataclasses
 from functools import partial
-from typing import Any, Optional, List, Tuple, Type, Union
+from typing import Any, List, Optional, Tuple, Type, Union
 
 from h2o_wave import Q, ui
 
@@ -13,10 +13,10 @@ from llm_studio.src.utils.type_annotations import KNOWN_TYPE_ANNOTATIONS
 
 
 def get_ui_elements(
-        cfg: Any,
-        q: Q,
-        limit: Optional[List[str]] = None,
-        pre: str = "experiment/start",
+    cfg: Any,
+    q: Q,
+    limit: Optional[List[str]] = None,
+    pre: str = "experiment/start",
 ) -> List:
     """For a given configuration setting return the according ui components.
 
@@ -37,7 +37,10 @@ def get_ui_elements(
     cfg_dict = {key: cfg_dict[key] for key in cfg._get_order()}
 
     for config_item_name, config_item_value in cfg_dict.items():
-        if config_item_name.startswith("_") or cfg._get_visibility(config_item_name) < 0:
+        if (
+            config_item_name.startswith("_")
+            or cfg._get_visibility(config_item_name) < 0
+        ):
             if q.client[f"{pre}/cfg_mode/from_cfg"]:
                 q.client[f"{pre}/cfg/{config_item_name}"] = config_item_value
             continue
@@ -54,21 +57,32 @@ def get_ui_elements(
             if config_item_name in default_cfg.dataset_keys:
                 # reading dataframe
                 if config_item_name == "train_dataframe" and (config_item_value != ""):
-                    q.client[f"{pre}/cfg/dataframe"] = read_dataframe(config_item_value, meta_only=True)
+                    q.client[f"{pre}/cfg/dataframe"] = read_dataframe(
+                        config_item_value, meta_only=True
+                    )
                 q.client[f"{pre}/cfg/{config_item_name}"] = config_item_value
             elif config_item_name in default_cfg.dataset_extra_keys:
-                _, config_item_value = get_dataset(config_item_name, config_item_value, q=q, limit=limit, pre=pre)
+                _, config_item_value = get_dataset(
+                    config_item_name, config_item_value, q=q, limit=limit, pre=pre
+                )
                 q.client[f"{pre}/cfg/{config_item_name}"] = config_item_value
             elif q.client[f"{pre}/cfg_mode/from_cfg"]:
                 q.client[f"{pre}/cfg/{config_item_name}"] = config_item_value
         # Overwrite current default values with user_settings
-        if q.client[f"{pre}/cfg_mode/from_default"] and f"default_{config_item_name}" in q.client:
-            q.client[f"{pre}/cfg/{config_item_name}"] = q.client[f"default_{config_item_name}"]
+        if (
+            q.client[f"{pre}/cfg_mode/from_default"]
+            and f"default_{config_item_name}" in q.client
+        ):
+            q.client[f"{pre}/cfg/{config_item_name}"] = q.client[
+                f"default_{config_item_name}"
+            ]
 
         if not (_check_dependencies(cfg=cfg, pre=pre, k=config_item_name, q=q)):
             continue
 
-        if (not _is_visible(k=config_item_name, cfg=cfg, q=q)) and q.client[f"{pre}/cfg_mode/from_cfg"]:
+        if (not _is_visible(k=config_item_name, cfg=cfg, q=q)) and q.client[
+            f"{pre}/cfg_mode/from_cfg"
+        ]:
             q.client[f"{pre}/cfg/{config_item_name}"] = config_item_value
             continue
 
@@ -97,9 +111,13 @@ def get_ui_elements(
             )
         elif dataclasses.is_dataclass(config_item_value):
             if limit is not None and config_item_name in limit:
-                elements_group = get_ui_elements(cfg=config_item_value, q=q, limit=None, pre=pre)
+                elements_group = get_ui_elements(
+                    cfg=config_item_value, q=q, limit=None, pre=pre
+                )
             else:
-                elements_group = get_ui_elements(cfg=config_item_value, q=q, limit=limit, pre=pre)
+                elements_group = get_ui_elements(
+                    cfg=config_item_value, q=q, limit=limit, pre=pre
+                )
 
             if config_item_name == "dataset" and pre != "experiment/start":
                 # get all the datasets available
@@ -111,24 +129,25 @@ def get_ui_elements(
                         q.client[f"{pre}/dataset"] = "1"
 
                 elements_group = [
-                                     ui.dropdown(
-                                         name=f"{pre}/dataset",
-                                         label="Dataset",
-                                         required=True,
-                                         value=q.client[f"{pre}/dataset"],
-                                         choices=[
-                                             ui.choice(str(row["id"]), str(row["name"]))
-                                             for _, row in df_datasets.iterrows()
-                                         ],
-                                         trigger=True,
-                                         tooltip=tooltip,
-                                     )
-                                 ] + elements_group
+                    ui.dropdown(
+                        name=f"{pre}/dataset",
+                        label="Dataset",
+                        required=True,
+                        value=q.client[f"{pre}/dataset"],
+                        choices=[
+                            ui.choice(str(row["id"]), str(row["name"]))
+                            for _, row in df_datasets.iterrows()
+                        ],
+                        trigger=True,
+                        tooltip=tooltip,
+                    )
+                ] + elements_group
 
             if len(elements_group) > 0:
                 items_list = [
                     ui.separator(
-                        name=config_item_name + "_expander", label=make_label(config_item_name, appendix=" settings")
+                        name=config_item_name + "_expander",
+                        label=make_label(config_item_name, appendix=" settings"),
                     )
                 ]
             else:
@@ -136,7 +155,9 @@ def get_ui_elements(
 
             items_list += elements_group
         else:
-            raise _get_type_annotation_error(config_item_value, type_annotations[config_item_name])
+            raise _get_type_annotation_error(
+                config_item_value, type_annotations[config_item_name]
+            )
 
         items += items_list
 
@@ -146,7 +167,7 @@ def get_ui_elements(
 
 
 def parse_ui_elements(
-        cfg: Any, q: Q, limit: Union[List, str] = "", pre: str = ""
+    cfg: Any, q: Q, limit: Union[List, str] = "", pre: str = ""
 ) -> Any:
     """Sets configuration settings with arguments from app
 
@@ -167,9 +188,9 @@ def parse_ui_elements(
             continue
 
         if (
-                len(limit) > 0
-                and k not in limit
-                and type_annotations[k] in KNOWN_TYPE_ANNOTATIONS
+            len(limit) > 0
+            and k not in limit
+            and type_annotations[k] in KNOWN_TYPE_ANNOTATIONS
         ):
             continue
 
@@ -211,13 +232,20 @@ def get_dataset_elements(cfg: Any, q: Q) -> List:
     items = []
     for config_item_name, config_item_value in cfg_dict.items():
         # Show some fields only during dataset import
-        if config_item_name.startswith("_") or cfg._get_visibility(config_item_name) == -1:
+        if (
+            config_item_name.startswith("_")
+            or cfg._get_visibility(config_item_name) == -1
+        ):
             continue
 
         if not (
-                _check_dependencies(
-                    cfg=cfg, pre="dataset/import", k=config_item_name, q=q, dataset_import=True
-                )
+            _check_dependencies(
+                cfg=cfg,
+                pre="dataset/import",
+                k=config_item_name,
+                q=q,
+                dataset_import=True,
+            )
         ):
             continue
         tooltip = cfg._get_tooltips(config_item_name)
@@ -236,8 +264,8 @@ def get_dataset_elements(cfg: Any, q: Q) -> List:
                             f"dataset/import/cfg/{trigger_key}"
                         ]
                 if (
-                        q.client["dataset/import/cfg/data_format"] is not None
-                        and config_item_name == "data_format"
+                    q.client["dataset/import/cfg/data_format"] is not None
+                    and config_item_name == "data_format"
                 ):
                     config_item_value = q.client["dataset/import/cfg/data_format"]
 
@@ -255,8 +283,13 @@ def get_dataset_elements(cfg: Any, q: Q) -> List:
                     ),
                 )
 
-                if config_item_name == "train_dataframe" and config_item_value != "None":
-                    q.client["dataset/import/cfg/dataframe"] = read_dataframe(config_item_value)
+                if (
+                    config_item_name == "train_dataframe"
+                    and config_item_value != "None"
+                ):
+                    q.client["dataset/import/cfg/dataframe"] = read_dataframe(
+                        config_item_value
+                    )
 
                 q.client[f"dataset/import/cfg/{config_item_name}"] = config_item_value
 
@@ -267,7 +300,10 @@ def get_dataset_elements(cfg: Any, q: Q) -> List:
                     type_annotation,
                     tooltip=tooltip,
                     password=False,
-                    trigger=(config_item_name in default_cfg.dataset_trigger_keys or config_item_name == "data_format"),
+                    trigger=(
+                        config_item_name in default_cfg.dataset_trigger_keys
+                        or config_item_name == "data_format"
+                    ),
                     q=q,
                     pre="dataset/import/cfg/",
                 )
@@ -276,7 +312,9 @@ def get_dataset_elements(cfg: Any, q: Q) -> List:
         elif dataclasses.is_dataclass(config_item_value):
             items_list = get_dataset_elements(cfg=config_item_value, q=q)
         else:
-            raise _get_type_annotation_error(config_item_value, type_annotations[config_item_name])
+            raise _get_type_annotation_error(
+                config_item_value, type_annotations[config_item_name]
+            )
 
         items += items_list
 
@@ -284,15 +322,15 @@ def get_dataset_elements(cfg: Any, q: Q) -> List:
 
 
 def _get_ui_element(
-        config_item_name: str,
-        config_item_value: Any,
-        poss_values: Any,
-        type_annotation: Type,
-        tooltip: str,
-        password: bool,
-        trigger: bool,
-        q: Q,
-        pre: str = "",
+    config_item_name: str,
+    config_item_value: Any,
+    poss_values: Any,
+    type_annotation: Type,
+    tooltip: str,
+    password: bool,
+    trigger: bool,
+    q: Q,
+    pre: str = "",
 ) -> Any:
     """Returns a single ui element for a given config entry
 
@@ -318,9 +356,11 @@ def _get_ui_element(
     if pre == "experiment/start/cfg/":
         if q.args["experiment/upload_yaml"] and "experiment/yaml_data" in q.client:
             if (config_item_name in q.client["experiment/yaml_data"].keys()) and (
-                    config_item_name != "experiment_name"
+                config_item_name != "experiment_name"
             ):
-                q.client[pre + config_item_name] = q.client["experiment/yaml_data"][config_item_name]
+                q.client[pre + config_item_name] = q.client["experiment/yaml_data"][
+                    config_item_name
+                ]
 
     if type_annotation in (int, float):
         if not isinstance(poss_values, possible_values.Number):
@@ -328,7 +368,11 @@ def _get_ui_element(
                 "Type annotations `int` and `float` need a `possible_values.Number`!"
             )
 
-        val = q.client[pre + config_item_name] if q.client[pre + config_item_name] is not None else config_item_value
+        val = (
+            q.client[pre + config_item_name]
+            if q.client[pre + config_item_name] is not None
+            else config_item_value
+        )
 
         min_val = (
             type_annotation(poss_values.min) if poss_values.min is not None else None
@@ -376,7 +420,11 @@ def _get_ui_element(
                 )
             ]
     elif type_annotation == bool:
-        val = q.client[pre + config_item_name] if q.client[pre + config_item_name] is not None else config_item_value
+        val = (
+            q.client[pre + config_item_name]
+            if q.client[pre + config_item_name] is not None
+            else config_item_value
+        )
 
         items_list = [
             ui.toggle(
@@ -423,8 +471,6 @@ def _get_ui_element(
                     " `allow_custom=True` is not supported at the same time."
                 )
 
-            config_item_value = q.client[pre + config_item_name] if q.client[
-                                                                        pre + config_item_name] is not None else config_item_value
             if isinstance(config_item_value, str):
                 config_item_value = [config_item_value]
 

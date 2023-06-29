@@ -776,7 +776,7 @@ def get_experiments_info(df: DataFrame, q: Q) -> DefaultDict:
                 score_val = ""
 
         try:
-            dataset = get_dataset(row.dataset).name
+            dataset = q.client.app_db.get_dataset(row.dataset).name
         except Exception:
             dataset = ""
 

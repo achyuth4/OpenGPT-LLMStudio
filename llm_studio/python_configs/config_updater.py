@@ -31,13 +31,15 @@ class NLPCausalLMConfigUpdater:
         gpus = copy(cfg.environment.gpus)
         self.update_gpu_ids(cfg)
         if cfg.environment.gpus != gpus:
-            raise ConfigAssertion(f"Gpus available {cfg.environment.gpus} is not consistent with"
-                                  f"Gpus specified in the configuration {gpus}")
+            raise ConfigAssertion(
+                f"Gpus available {cfg.environment.gpus} is not consistent with"
+                f"Gpus specified in the configuration {gpus}"
+            )
 
         if self.cfg.training.lora_target_modules is None:
             self.update_lora_target_layers(cfg)
             if self.cfg.training.lora_target_modules is None:
-                raise ConfigAssertion(f"Please specify LORA target modules!")
+                raise ConfigAssertion("Please specify LORA target modules!")
             self.cfg.training.lora_target_modules = None
 
     def update_lora_target_layers(self, cfg):
@@ -57,17 +59,24 @@ class NLPCausalLMConfigUpdater:
                         "dense",
                     ],
                 }.get(model_type, [])
-            cfg.training.lora_target_modules = ', '.join(lora_target_modules)
+            cfg.training.lora_target_modules = ", ".join(lora_target_modules)
 
     def update_gpu_ids(self, cfg):
         # For better UX, gpu_id start with 1, thus <= in the comparison below
-        gpus = tuple(gpu_id for gpu_id in cfg.environment.gpus
-                     if gpu_id <= torch.cuda.device_count())
+        gpus = tuple(
+            gpu_id
+            for gpu_id in cfg.environment.gpus
+            if gpu_id <= torch.cuda.device_count()
+        )
         if gpus != cfg.environment.gpus:
-            logger.warning(f"Configuration specifies the following gpu ids: {cfg.environment.gpus},"
-                           f" but only found {torch.cuda.device_count()} number of GPUs. This can happen "
-                           f"when running an experiment from a configuration file that was generated on a machine with "
-                           f"more GPUs available. Automatically setting GPUs to {gpus}")
+            logger.warning(
+                "Configuration specifies the following gpu ids: "
+                f"{cfg.environment.gpus}, but only found "
+                f"{torch.cuda.device_count()} number of GPUs. "
+                "This can happen when running an experiment from a configuration "
+                "file that was generated on a machine with more GPUs available. "
+                f"Automatically setting GPUs to {gpus}"
+            )
             cfg.environment.gpus = gpus
 
 

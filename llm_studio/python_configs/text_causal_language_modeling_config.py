@@ -451,6 +451,29 @@ class ConfigNLPCausalLMLogging(DefaultConfig):
         self._visibility["plots_class"] = -1
 
 
+MODELNAME2MODELTYPE = {
+    "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v2": "RefinedWebModel",
+    "h2oai/h2ogpt-gm-oasst1-en-2048-open-llama-7b": "llama",
+    "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-40b-v1": "RefinedWeb",
+    "h2oai/h2ogpt-oig-oasst1-512-6.9b": "gpt_neox",
+    "h2oai/h2ogpt-oasst1-512-20b": "gpt_neox",
+    "EleutherAI/gpt-neo-1.3B": "gpt_neo",
+    "EleutherAI/gpt-j-6B": "gptj",
+    "EleutherAI/gpt-neox-20b": "gpt_neox",
+    "facebook/opt-125m": "opt",
+    "facebook/opt-2.7b": "opt",
+    "facebook/opt-6.7b": "opt",
+    "facebook/opt-13b": "opt",
+    "EleutherAI/pythia-1b-deduped": "gpt_neox",
+    "EleutherAI/pythia-2.8b-deduped": "gpt_neox",
+    "EleutherAI/pythia-6.9b-deduped": "gpt_neox",
+    "EleutherAI/pythia-12b-deduped": "gpt_neox",
+    "cerebras/Cerebras-GPT-13B": "gpt2",
+    "stabilityai/stablelm-base-alpha-7b": "gpt_neox",
+    "togethercomputer/GPT-NeoXT-Chat-Base-20B": "gpt_neox",
+}
+
+
 @dataclass
 class ConfigProblemBase(DefaultConfig):
     output_directory: str = f"output/{os.path.basename(__file__).split('.')[0]}"
@@ -483,26 +506,6 @@ class ConfigProblemBase(DefaultConfig):
         self._visibility["output_directory"] = -1
 
         self._possible_values["llm_backbone"] = possible_values.String(
-            values=(
-                "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v2",
-                "h2oai/h2ogpt-gm-oasst1-en-2048-open-llama-7b",
-                "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-40b-v1",
-                "h2oai/h2ogpt-oig-oasst1-512-6.9b",
-                "h2oai/h2ogpt-oasst1-512-20b",
-                "EleutherAI/gpt-neo-1.3B",
-                "EleutherAI/gpt-j-6B",
-                "EleutherAI/gpt-neox-20b",
-                "facebook/opt-125m",
-                "facebook/opt-2.7b",
-                "facebook/opt-6.7b",
-                "facebook/opt-13b",
-                "EleutherAI/pythia-1b-deduped",
-                "EleutherAI/pythia-2.8b-deduped",
-                "EleutherAI/pythia-6.9b-deduped",
-                "EleutherAI/pythia-12b-deduped",
-                "cerebras/Cerebras-GPT-13B",
-                "stabilityai/stablelm-base-alpha-7b",
-                "togethercomputer/GPT-NeoXT-Chat-Base-20B",
-            ),
+            values=tuple(model_name for model_name in MODELNAME2MODELTYPE),
             allow_custom=True,
         )

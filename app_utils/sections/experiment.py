@@ -39,7 +39,7 @@ from app_utils.utils import (
     start_experiment,
 )
 from app_utils.wave_utils import busy_dialog, ui_table_from_df, wave_theme
-from llm_studio.python_configs.config_updater import ConfigUpdater
+from llm_studio.python_configs.config_updater import ConfigUpdaterFactory
 from llm_studio.src.datasets.text_utils import get_tokenizer
 from llm_studio.src.tooltips import tooltips
 from llm_studio.src.utils.config_utils import (
@@ -456,7 +456,7 @@ async def experiment_start(q: Q) -> None:
     ################
     cfg_updater = q.client["experiment/start/cfg_updater"]
     if not cfg_updater:
-        q.client["experiment/start/cfg_updater"] = ConfigUpdater.get(
+        q.client["experiment/start/cfg_updater"] = ConfigUpdaterFactory.get(
             q.client["experiment/start/cfg_file"]
         )(q.client["experiment/start/cfg"])
         cfg_updater = q.client["experiment/start/cfg_updater"]
@@ -465,6 +465,9 @@ async def experiment_start(q: Q) -> None:
             cfg=q.client["experiment/start/cfg"], q=q, pre="experiment/start/cfg/"
         )
     cfg_updater.update(q.client["experiment/start/cfg"])
+    config_problem_dict = cfg_updater.check(q.client["experiment/start/cfg"])
+    items.extend([ui.text(f"Problem for {config_name}: {problem_description}")
+                  for config_name, problem_description in config_problem_dict.items()])
     #####################
 
     option_items = get_ui_elements(cfg=q.client["experiment/start/cfg"], q=q)

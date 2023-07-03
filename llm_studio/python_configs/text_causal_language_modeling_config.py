@@ -413,7 +413,7 @@ class ConfigNLPCausalLMEnvironment(DefaultConfig):
         super().__post_init__()
         self._possible_values["gpus"] = possible_values.String(
             values=tuple(
-                [(str(x), f"GPU #{x+1}") for x in range(torch.cuda.device_count())]
+                [(str(x), f"GPU #{x + 1}") for x in range(torch.cuda.device_count())]
             ),
             allow_custom=False,
         )
@@ -448,9 +448,15 @@ class ConfigNLPCausalLMLogging(DefaultConfig):
 
 
 MODELNAME2MODELTYPE = {
+    "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v3": "RefinedWebModel",
     "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v2": "RefinedWebModel",
+    "tiiuae/falcon-7b": "RefinedWebModel",
+    "tiiuae/falcon-40b": "RefinedWebModel",
     "h2oai/h2ogpt-gm-oasst1-en-2048-open-llama-7b": "llama",
-    "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-40b-v1": "RefinedWeb",
+    "openlm-research/open_llama_3b": None,
+    "openlm-research/open_llama_7b": None,
+    "openlm-research/open_llama_13b": None,
+
     "h2oai/h2ogpt-oig-oasst1-512-6.9b": "gpt_neox",
     "h2oai/h2ogpt-oasst1-512-20b": "gpt_neox",
     "EleutherAI/gpt-neo-1.3B": "gpt_neo",
@@ -503,24 +509,5 @@ class ConfigProblemBase(DefaultConfig):
 
         self._possible_values["llm_backbone"] = possible_values.String(
             values=tuple(model_name for model_name in MODELNAME2MODELTYPE),
-            values=(
-                "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v3",
-                "h2oai/h2ogpt-gm-oasst1-en-2048-open-llama-7b",
-                "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-40b-v2",
-                "tiiuae/falcon-7b",
-                "tiiuae/falcon-40b",
-                "openlm-research/open_llama_3b",
-                "openlm-research/open_llama_7b",
-                "openlm-research/open_llama_13b",
-                "EleutherAI/gpt-j-6B",
-                "EleutherAI/gpt-neox-20b",
-                "facebook/opt-125m",
-                "facebook/opt-2.7b",
-                "EleutherAI/pythia-1b-deduped",
-                "EleutherAI/pythia-2.8b-deduped",
-                "EleutherAI/pythia-6.9b-deduped",
-                "EleutherAI/pythia-12b-deduped",
-                "togethercomputer/GPT-NeoXT-Chat-Base-20B",
-            ),
             allow_custom=True,
         )

@@ -76,7 +76,7 @@ class ConfigNLPCausalLMDataset(DefaultConfig):
             add_none=True, prefer_with=lambda path: "val" in path
         )
         self._possible_values["validation_size"] = (0.01, 0.95, 0.01)
-        self._possible_values["data_sample"] = (0.05, 1, 0.05)
+        self._possible_values["data_sample"] = (0.01, 1, 0.01)
         self._possible_values["data_sample_choice"] = ["Train", "Validation"]
         self._possible_values["prompt_column"] = possible_values.Columns(
             prefer_with=lambda column: column in ("instruction", "prompt")
@@ -203,7 +203,7 @@ class ConfigNLPCausalLMTraining(DefaultConfig):
         self._possible_values["lora_alpha"] = (1, 256, 1)
         self._possible_values["lora_dropout"] = (0.0, 0.5, 0.01)
 
-        self._possible_values["evaluation_epochs"] = (0.1, 1, 0.05)
+        self._possible_values["evaluation_epochs"] = (0.01, 1, 0.01)
 
         self._possible_values["initial_kl_coefficient"] = (0.01, 0.5, 0.01)
         self._possible_values["kl_target"] = (0.1, 16, 0.1)
@@ -215,13 +215,13 @@ class ConfigNLPCausalLMTraining(DefaultConfig):
         self._possible_values["scaling_factor_value_loss"] = (0.01, 1, 0.01)
         self._possible_values["ppo_epochs"] = (1, 16, 1)
         self._possible_values["ppo_generate_temperature"] = (0.1, 1.0, 0.1)
-        self._possible_values["ppo_batch_size"] = (1, 1024, 1)
+        self._possible_values["ppo_batch_size"] = (1, 256, 1)
 
         self._visibility["loss_class"] = -1
         self._visibility["drop_last_batch"] = -1
         self._visibility["differential_learning_rate_layers"] = 1
         self._visibility["differential_learning_rate"] = 1
-        self._visibility["ppo_batch_size"] = -1
+        self._visibility["ppo_batch_size"] = 1
 
         self._nesting.add(
             ["differential_learning_rate"],
@@ -234,10 +234,6 @@ class ConfigNLPCausalLMTraining(DefaultConfig):
         self._nesting.add(
             ["lora_r", "lora_alpha", "lora_dropout", "lora_target_modules"],
             [Dependency(key="lora", value=False, is_set=False)],
-        )
-        self._nesting.add(
-            ["evaluation_epochs"],
-            [Dependency(key="save_best_checkpoint", value=False, is_set=True)],
         )
         self._nesting.add(
             ["train_validation_data"],
@@ -277,9 +273,9 @@ class ConfigNLPCausalLMTokenizer(DefaultConfig):
 
     def __post_init__(self):
         super().__post_init__()
-        self._possible_values["max_length_prompt"] = (32, 2048, 16)
-        self._possible_values["max_length_answer"] = (32, 2048, 16)
-        self._possible_values["max_length"] = (32, 2048, 16)
+        self._possible_values["max_length_prompt"] = (32, 8192, 32)
+        self._possible_values["max_length_answer"] = (32, 8192, 32)
+        self._possible_values["max_length"] = (32, 8192, 32)
         self._possible_values["padding_quantile"] = (0, 1, 0.01)
         self._padding_side = "left"
 
@@ -350,7 +346,7 @@ class ConfigNLPCausalLMPrediction(DefaultConfig):
     top_k: int = 0
     top_p: float = 1.0
 
-    num_history: int = 2
+    num_history: int = 4
 
     def __post_init__(self):
         super().__post_init__()
@@ -507,5 +503,24 @@ class ConfigProblemBase(DefaultConfig):
 
         self._possible_values["llm_backbone"] = possible_values.String(
             values=tuple(model_name for model_name in MODELNAME2MODELTYPE),
+            values=(
+                "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v3",
+                "h2oai/h2ogpt-gm-oasst1-en-2048-open-llama-7b",
+                "h2oai/h2ogpt-gm-oasst1-en-2048-falcon-40b-v2",
+                "tiiuae/falcon-7b",
+                "tiiuae/falcon-40b",
+                "openlm-research/open_llama_3b",
+                "openlm-research/open_llama_7b",
+                "openlm-research/open_llama_13b",
+                "EleutherAI/gpt-j-6B",
+                "EleutherAI/gpt-neox-20b",
+                "facebook/opt-125m",
+                "facebook/opt-2.7b",
+                "EleutherAI/pythia-1b-deduped",
+                "EleutherAI/pythia-2.8b-deduped",
+                "EleutherAI/pythia-6.9b-deduped",
+                "EleutherAI/pythia-12b-deduped",
+                "togethercomputer/GPT-NeoXT-Chat-Base-20B",
+            ),
             allow_custom=True,
         )

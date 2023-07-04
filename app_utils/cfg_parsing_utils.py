@@ -89,10 +89,10 @@ def get_ui_elements(
         tooltip = cfg._get_tooltips(config_item_name)
 
         trigger = True
-        q.client[f"{pre}/trigger_ks"] = ["train_dataframe"]
-        q.client[f"{pre}/trigger_ks"] += cfg._get_nesting_triggers()
-        if config_item_name in q.client[f"{pre}/trigger_ks"]:
-            trigger = True
+        # q.client[f"{pre}/trigger_ks"] = ["train_dataframe"]
+        # q.client[f"{pre}/trigger_ks"] += cfg._get_nesting_triggers()
+        # if config_item_name in q.client[f"{pre}/trigger_ks"]:
+        #     trigger = True
 
         if type_annotation in KNOWN_TYPE_ANNOTATIONS:
             if limit is not None and config_item_name not in limit:
@@ -404,6 +404,7 @@ def _get_ui_element(
                     min=min_val if min_val is not None else -1e12,
                     step=step_val,
                     tooltip=tooltip,
+                    trigger=trigger
                 )
             ]
         else:
@@ -490,6 +491,7 @@ def _get_ui_element(
                         value=config_item_value[0],
                         choices=list(options),
                         tooltip=tooltip,
+                        trigger=trigger
                     )
                 ]
             else:

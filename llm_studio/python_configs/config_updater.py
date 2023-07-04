@@ -80,7 +80,7 @@ class NLPCausalLMConfigUpdater:
         gpus = tuple(
             gpu_id
             for gpu_id in cfg.environment.gpus
-            if gpu_id <= torch.cuda.device_count()
+            if int(gpu_id) <= torch.cuda.device_count()
         )
         if gpus != cfg.environment.gpus:
             cfg.environment.gpus = gpus

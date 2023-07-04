@@ -20,7 +20,7 @@ from .utils import (
     get_user_db_path,
     get_user_name,
     load_user_settings,
-    prepare_default_dataset,
+    prepare_oasst1_dataset,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ def import_data(q: Q):
                 shutil.rmtree(path)
             os.makedirs(path, exist_ok=True)
 
-            df = prepare_default_dataset(path)
+            df = prepare_oasst1_dataset(path)
 
             cfg = load_config_py(
                 config_path=os.path.join(

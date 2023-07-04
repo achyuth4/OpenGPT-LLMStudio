@@ -7,6 +7,8 @@ import logging
 import math
 import os
 import pickle
+import random
+import re
 import shutil
 import socket
 import subprocess
@@ -19,6 +21,7 @@ from functools import partial
 from typing import Any, DefaultDict, Dict, List, Optional, Tuple, Type, Union
 
 import GPUtil
+import datasets
 import numpy as np
 import pandas as pd
 import psutil
@@ -28,6 +31,7 @@ from datasets import load_dataset
 from h2o_wave import Q, ui
 from pandas.core.frame import DataFrame
 from sqlitedict import SqliteDict
+from tqdm import tqdm
 
 from app_utils.db import Experiment
 from llm_studio.python_configs.text_causal_language_modeling_config import (
@@ -44,7 +48,7 @@ from llm_studio.src.utils.data_utils import is_valid_data_frame, read_dataframe
 from llm_studio.src.utils.export_utils import get_size_str
 from llm_studio.src.utils.type_annotations import KNOWN_TYPE_ANNOTATIONS
 
-from .config import default_cfg
+from app_utils.config import default_cfg
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +93,7 @@ def find_free_port():
 
 
 def start_process(
-    cfg: ConfigProblemBase, gpu_list: List, process_queue: List, env_vars: Dict
+        cfg: ConfigProblemBase, gpu_list: List, process_queue: List, env_vars: Dict
 ) -> subprocess.Popen:
     """Starts train.py for a given configuration setting
 
@@ -206,7 +210,7 @@ def filter_valid_files(files):
 
 
 def s3_file_options(
-    bucket: str, aws_access_key: str, aws_secret_key: str
+        bucket: str, aws_access_key: str, aws_secret_key: str
 ) -> Optional[List[str]]:
     """ "Returns all zip files in the target s3 bucket
 
@@ -350,7 +354,7 @@ def extract_if_zip(file, actual_path):
 
 
 async def s3_download(
-    q, bucket, filename, aws_access_key, aws_secret_key
+        q, bucket, filename, aws_access_key, aws_secret_key
 ) -> Tuple[str, str]:
     """Downloads a file from s3
 
@@ -418,7 +422,7 @@ async def local_download(q: Any, filename: str) -> Tuple[str, str]:
 
 
 async def kaggle_download(
-    q: Any, command: str, kaggle_access_key: str, kaggle_secret_key: str
+        q: Any, command: str, kaggle_access_key: str, kaggle_secret_key: str
 ) -> Tuple[str, str]:
     """ "Downloads a file from kaggle
 
@@ -575,11 +579,11 @@ def get_model_types(problem_type: str) -> List[Tuple[str, str]]:
 
 
 def get_dataset(
-    k: str,
-    v: Any,
-    q: Q,
-    limit: Optional[List[str]] = None,
-    pre: str = "experiment/start",
+        k: str,
+        v: Any,
+        q: Q,
+        limit: Optional[List[str]] = None,
+        pre: str = "experiment/start",
 ) -> Tuple[List[str], Any]:
     """
     Get the dataset and the preliminary default value for a setting.
@@ -630,15 +634,15 @@ def get_dataset(
 
 
 def get_ui_element(
-    k: str,
-    v: Any,
-    poss_values: Any,
-    type_annotation: Type,
-    tooltip: str,
-    password: bool,
-    trigger: bool,
-    q: Q,
-    pre: str = "",
+        k: str,
+        v: Any,
+        poss_values: Any,
+        type_annotation: Type,
+        tooltip: str,
+        password: bool,
+        trigger: bool,
+        q: Q,
+        pre: str = "",
 ) -> Any:
     """Returns a single ui element for a given config entry
 
@@ -664,7 +668,7 @@ def get_ui_element(
     if pre == "experiment/start/cfg/":
         if q.args["experiment/upload_yaml"] and "experiment/yaml_data" in q.client:
             if (k in q.client["experiment/yaml_data"].keys()) and (
-                k != "experiment_name"
+                    k != "experiment_name"
             ):
                 q.client[pre + k] = q.client["experiment/yaml_data"][k]
 
@@ -839,9 +843,9 @@ def get_dataset_elements(cfg: Any, q: Q) -> List:
             continue
 
         if not (
-            check_dependencies(
-                cfg=cfg, pre="dataset/import", k=k, q=q, dataset_import=True
-            )
+                check_dependencies(
+                    cfg=cfg, pre="dataset/import", k=k, q=q, dataset_import=True
+                )
         ):
             continue
         tooltip = cfg._get_tooltips(k)
@@ -864,8 +868,8 @@ def get_dataset_elements(cfg: Any, q: Q) -> List:
                             f"dataset/import/cfg/{trigger_key}"
                         ]
                 if (
-                    q.client["dataset/import/cfg/data_format"] is not None
-                    and k == "data_format"
+                        q.client["dataset/import/cfg/data_format"] is not None
+                        and k == "data_format"
                 ):
                     v = q.client["dataset/import/cfg/data_format"]
 
@@ -971,10 +975,10 @@ def is_visible(k: str, cfg: Any, q: Q) -> bool:
 
 
 def get_ui_elements(
-    cfg: Any,
-    q: Q,
-    limit: Optional[List[str]] = None,
-    pre: str = "experiment/start",
+        cfg: Any,
+        q: Q,
+        limit: Optional[List[str]] = None,
+        pre: str = "experiment/start",
 ) -> List:
     """For a given configuration setting return the according ui components.
 
@@ -1079,19 +1083,19 @@ def get_ui_elements(
                         q.client[f"{pre}/dataset"] = "1"
 
                 elements_group = [
-                    ui.dropdown(
-                        name=f"{pre}/dataset",
-                        label="Dataset",
-                        required=True,
-                        value=q.client[f"{pre}/dataset"],
-                        choices=[
-                            ui.choice(str(row["id"]), str(row["name"]))
-                            for _, row in df_datasets.iterrows()
-                        ],
-                        trigger=True,
-                        tooltip=tooltip,
-                    )
-                ] + elements_group
+                                     ui.dropdown(
+                                         name=f"{pre}/dataset",
+                                         label="Dataset",
+                                         required=True,
+                                         value=q.client[f"{pre}/dataset"],
+                                         choices=[
+                                             ui.choice(str(row["id"]), str(row["name"]))
+                                             for _, row in df_datasets.iterrows()
+                                         ],
+                                         trigger=True,
+                                         tooltip=tooltip,
+                                     )
+                                 ] + elements_group
 
             if len(elements_group) > 0:
                 t = [
@@ -1114,7 +1118,7 @@ def get_ui_elements(
 
 
 def parse_ui_elements(
-    cfg: Any, q: Q, limit: Union[List, str] = "", pre: str = ""
+        cfg: Any, q: Q, limit: Union[List, str] = "", pre: str = ""
 ) -> Any:
     """Sets configuration settings with arguments from app
 
@@ -1135,9 +1139,9 @@ def parse_ui_elements(
             continue
 
         if (
-            len(limit) > 0
-            and k not in limit
-            and type_annotations[k] in KNOWN_TYPE_ANNOTATIONS
+                len(limit) > 0
+                and k not in limit
+                and type_annotations[k] in KNOWN_TYPE_ANNOTATIONS
         ):
             continue
 
@@ -1332,12 +1336,12 @@ def get_experiments_info(df: DataFrame, q: Q) -> DefaultDict:
                 total_steps = max(total_training_steps + total_validation_steps, 1)
 
                 if (
-                    "global_start_time" in logs["internal"].keys()
-                    and curr_total_step > 0
+                        "global_start_time" in logs["internal"].keys()
+                        and curr_total_step > 0
                 ):
                     elapsed = (
-                        time.time()
-                        - logs["internal"]["global_start_time"]["values"][-1]
+                            time.time()
+                            - logs["internal"]["global_start_time"]["values"][-1]
                     )
                     remaining_steps = total_steps - curr_total_step
                     eta = elapsed * (remaining_steps / curr_total_step)
@@ -1358,9 +1362,9 @@ def get_experiments_info(df: DataFrame, q: Q) -> DefaultDict:
                 curr_total_step = 0
 
             if (
-                "validation" in logs
-                and metric in logs["validation"]
-                and logs["validation"][metric]["values"][-1] is not None
+                    "validation" in logs
+                    and metric in logs["validation"]
+                    and logs["validation"][metric]["values"][-1] is not None
             ):
                 score_val = np.round(logs["validation"][metric]["values"][-1], 4)
             else:
@@ -1453,9 +1457,9 @@ def get_datasets_info(df: DataFrame, q: Q) -> Tuple[DataFrame, DefaultDict]:
 
 
 def get_experiments(
-    q: Q,
-    status: Union[Optional[str], Optional[List[str]]] = None,
-    mode: Optional[str] = None,
+        q: Q,
+        status: Union[Optional[str], Optional[List[str]]] = None,
+        mode: Optional[str] = None,
 ) -> pd.DataFrame:
     """Return all experiments given certain restrictions
 
@@ -1497,8 +1501,8 @@ def get_experiments(
 
 
 def get_datasets(
-    q: Q,
-    show_experiment_datasets: bool = True,
+        q: Q,
+        show_experiment_datasets: bool = True,
 ) -> pd.DataFrame:
     """Return all datasets given certain restrictions
 
@@ -1767,7 +1771,7 @@ def get_unique_name(expected_name, existing_names, is_invalid_function=None):
     cnt = 1
 
     while new_name in existing_names or (
-        is_invalid_function is not None and is_invalid_function(new_name)
+            is_invalid_function is not None and is_invalid_function(new_name)
     ):
         new_name = f"{expected_name}.{cnt}"
         cnt += 1
@@ -1904,7 +1908,7 @@ def get_cfg_list_items(cfg) -> List:
     return x
 
 
-def prepare_default_dataset(path):
+def prepare_oasst1_dataset(path):
     ds = load_dataset("OpenAssistant/oasst1")
     train = ds["train"].to_pandas()
     val = ds["validation"].to_pandas()
@@ -1947,3 +1951,66 @@ def prepare_default_dataset(path):
     )
 
     return df_assistant[(df_assistant["rank"] == 0.0) & (df_assistant["lang"] == "en")]
+
+
+def extract_anthropic_prompt(prompt_and_response):
+    """Extract the anthropic prompt from a prompt and response pair."""
+    search_term = '\n\nAssistant:'
+    search_term_idx = prompt_and_response.rfind(search_term)
+    assert search_term_idx != -1, f"Prompt and response does not contain '{search_term}'"
+    return prompt_and_response[:search_term_idx + len(search_term)]
+
+
+def _parse_row(prompt_and_response):
+    """Extract the anthropic prompt from a prompt and response pair."""
+    search_term = '\n\nAssistant:'
+    search_term_idx = prompt_and_response['chosen'].rfind(search_term)
+    assert search_term_idx != -1, f"Prompt and response does not contain '{search_term}'"
+    prompt = prompt_and_response['chosen'][:search_term_idx + len(search_term)]
+
+    chosen_response = prompt_and_response['chosen'][len(prompt):]
+    rejected_response = prompt_and_response['rejected'][len(prompt):]
+
+    return prompt, chosen_response, rejected_response
+
+
+def _split_up_prompt(prompt):
+    human_texts = re.findall(r'\n\nHuman:(.*?)(?=(\n\nAssistant:|$))', prompt, flags=re.DOTALL)
+    assistant_texts = re.findall(r'\n\nAssistant:(.*?)(?=(\n\nHuman:|$))', prompt, flags=re.DOTALL)
+    human_texts = [text[0].strip() for text in human_texts]
+    assistant_texts = [text[0].strip() for text in assistant_texts]
+
+    assert len(human_texts) == len(assistant_texts), prompt
+    dialogue = list(zip(human_texts, assistant_texts))
+    return dialogue
+
+
+def prepare_hh_rlhf_dataset(split: str) -> pd.DataFrame:
+    """
+    Adapted from https://github.com/eric-mitchell/direct-preference-optimization/blob/main/preference_datasets.py
+    """
+    dataset = datasets.load_dataset('Anthropic/hh-rlhf', split=split)
+    rnd = random.Random()
+    rnd.seed(123)
+    dfs = []
+    for row in tqdm(dataset):
+        prompt, chosen_response, rejected_response = _parse_row(row)
+        parent_uuid = None
+        parsed_texts = []
+        for human_text, assistant_text in _split_up_prompt(prompt):
+            random_uuid = str(uuid.UUID(int=rnd.getrandbits(128), version=4))
+            parsed_texts += [[human_text, assistant_text, random_uuid, parent_uuid, None, None]]
+            parent_uuid = random_uuid
+
+        parsed_texts[-1][-2] = chosen_response
+        parsed_texts[-1][-1] = rejected_response
+        df = pd.DataFrame(parsed_texts,
+                          columns=['instruction',
+                                   'output',
+                                   'id',
+                                   'parent_id',
+                                   'chosen_response',
+                                   'rejected_response'])
+        dfs.append(df)
+
+    return pd.concat(dfs).reset_index(drop=True)

@@ -88,7 +88,7 @@ def get_ui_elements(
 
         tooltip = cfg._get_tooltips(config_item_name)
 
-        trigger = False
+        trigger = True
         q.client[f"{pre}/trigger_ks"] = ["train_dataframe"]
         q.client[f"{pre}/trigger_ks"] += cfg._get_nesting_triggers()
         if config_item_name in q.client[f"{pre}/trigger_ks"]:

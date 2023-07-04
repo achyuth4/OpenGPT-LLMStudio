@@ -38,7 +38,6 @@ from app_utils.utils import (
 )
 from app_utils.wave_utils import busy_dialog, ui_table_from_df, wave_theme
 from llm_studio.python_configs.config_updater import ConfigUpdaterFactory
-from llm_studio.src.datasets.text_utils import get_tokenizer
 from llm_studio.src.tooltips import tooltips
 from llm_studio.src.utils.config_utils import (
     convert_cfg_to_nested_dictionary,

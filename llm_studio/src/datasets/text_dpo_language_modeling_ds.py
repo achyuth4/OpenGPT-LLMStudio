@@ -13,6 +13,35 @@ logger = logging.getLogger(__name__)
 
 
 class CustomDataset(LLMCustomDataset):
+    """
+    Dataset for DPO optimization.
+    The data is assumed to be in hierarchical form of the following format:
+
+    Beginning of a chat-answer interaction (parent_id is not set):
+        instruction                    What kind of noises did dinosaurs make?
+        output               Humans and dinosaurs didn’t live at the same t...
+        id                                610e4ad5-09c4-4055-9ff4-948fe6b4f832
+        parent_id                                                         None
+        chosen_response                                                   None
+        rejected_response                                                 None
+
+    Within a chat-answer interaction (parent_id points for the previous prompt-answer sample):
+        instruction                                               yes they did
+        output               to guess, and that would probably require lots...
+        id                                573e8d77-550a-4889-8ff4-1e8d8944897c
+        parent_id                         610e4ad5-09c4-4055-9ff4-948fe6b4f832
+        chosen_response                                                   None
+        rejected_response                                                 None
+
+
+    Last question. Output should be empty, chosen and rejected responses should be given:
+        instruction          Do have a phone number or email address for hi...
+        output
+        id                                e0edeaf1-166d-4683-8609-dcba6fafc520
+        parent_id                         e7e96d54-006d-4b34-a9ed-479c3ec3068c
+        chosen_response       He doesn’t have a publicly available phone nu...
+        rejected_response     If you want to contact Ryan Reynolds by phone...
+    """
 
     def __init__(self, df: pd.DataFrame, cfg: Any, mode: str = "train"):
         """
@@ -26,24 +55,21 @@ class CustomDataset(LLMCustomDataset):
         self.mode = mode
         self.df = df.copy()
 
-        self.indices = np.arange(len(self.df))
-
         assert self.mode in [
             "train",
             "validation",
         ], f"There is no {self.mode} for the datasets"
 
         self.tokenizer = get_tokenizer(cfg)
-
         self.prompts = [self.parse_prompt(cfg, prompt)
                         for prompt in get_texts(df, self.cfg, separator="")]
         self.answers = (
             self.df[self.cfg.dataset.answer_column].astype(str).values.tolist()
         )
-        self.chosen_response = (
+        self.chosen_answers = (
             self.df[self.cfg.dataset.chosen_response_column].astype(str).values.tolist()
         )
-        self.rejected_response = (
+        self.rejected_answer = (
             self.df[self.cfg.dataset.rejected_response_column].astype(str).values.tolist()
         )
 
@@ -70,17 +96,11 @@ class CustomDataset(LLMCustomDataset):
     def __getitem__(self, idx: int) -> Dict:
         """Reads a single text observation."""
         sample = dict()
-        prompt_encoding, answer_encoding = self._get_prompt_and_answer_encoding(idx)
-        encodings = [[prompt_encoding, answer_encoding]]
-        parent_encodings, _ = self.get_parent_encodings(idx)
-        encodings = parent_encodings + encodings
-
-        ####
-        # Add preferred and rejected answer
-
-        ####
-
+        encodings = [self._get_prompt_and_answer_encoding(i) for i in self.get_id_chain(idx)]
+        assert encodings[-1][1] == []
         input_ids = torch.cat([torch.cat(encoding) for encoding in encodings])
+
+        ####
         sample.update(
             self.pad_tokens(
                 input_ids,
@@ -100,21 +120,18 @@ class CustomDataset(LLMCustomDataset):
         )
         return sample
 
-    @staticmethod
-    def parse_prompt(cfg: Any, prompt: str):
-        prompt = (
-            f"{codecs.decode(cfg.dataset.text_prompt_start, 'unicode_escape')}{prompt}"
-        )
-        if cfg.dataset.add_eos_token_to_prompt:
-            prompt += cfg._tokenizer_eos_token
-        prompt = (
-            f"{prompt}"
-            f"{codecs.decode(cfg.dataset.text_answer_separator, 'unicode_escape')}"
-        )
-        return prompt
+    def get_id_chain(self, idx):
+        id_chain = [idx]
+        if self.parent_ids is not None:
+            parent_idx = idx
+            while (
+                    parent_idx := self.df_id_to_idx.get(self.parent_ids[parent_idx], None)
+            ) is not None:
+                id_chain = [parent_idx] + id_chain
+        return id_chain
 
     def __len__(self) -> int:
-        return len(self.df)
+        return len(self.indices)
 
     @staticmethod
     def get_input_columns(cfg: Any) -> Tuple[str, ...]:
@@ -211,32 +228,6 @@ class CustomDataset(LLMCustomDataset):
             df[f"pred_{cfg.dataset.answer_column}"] = output["predicted_text"]
 
         return output, df
-
-    def _get_prompt_and_answer_encoding(self, idx) -> List:
-        prompt = self.prompts[idx]
-        answer = self.answers[idx]
-
-        prompt_encoding = self.encode(
-            self.tokenizer, prompt, self.cfg.tokenizer.max_length_prompt, "left"
-        )["input_ids"]
-        if self.cfg.dataset.add_eos_token_to_answer:
-            max_length_answer = self.cfg.tokenizer.max_length_answer - 1
-        else:
-            max_length_answer = self.cfg.tokenizer.max_length_answer
-        answer_encoding = self.encode(
-            self.tokenizer, answer, max_length_answer, "right"
-        )["input_ids"]
-        if self.cfg.dataset.add_eos_token_to_answer:
-            answer_encoding = torch.cat(
-                [
-                    answer_encoding,
-                    torch.Tensor([self.tokenizer.eos_token_id]),
-                ],
-                dim=0,
-            )
-
-        return [prompt_encoding, answer_encoding]
-
 
 if __name__ == '__main__':
     df = pd.read_parquet("/home/max/PycharmProjects/h2o-llmstudio/data/hh.pq")

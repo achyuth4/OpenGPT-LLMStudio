@@ -2014,3 +2014,8 @@ def prepare_hh_rlhf_dataset(split: str) -> pd.DataFrame:
         dfs.append(df)
 
     return pd.concat(dfs).reset_index(drop=True)
+
+
+if __name__ == '__main__':
+    df = prepare_hh_rlhf_dataset("train")
+    df.to_parquet("/home/max/PycharmProjects/h2o-llmstudio/data/hh.pq")

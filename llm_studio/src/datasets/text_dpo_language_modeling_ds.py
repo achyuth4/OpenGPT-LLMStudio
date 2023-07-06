@@ -1,15 +1,12 @@
-import codecs
 import logging
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-import torch
 
 from llm_studio.src.datasets.text_causal_language_modeling_ds import (
     CustomDataset as LLMCustomDataset,
 )
-from llm_studio.src.datasets.text_utils import get_texts, get_tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +49,9 @@ class CustomDataset(LLMCustomDataset):
             cfg: config with all the hyperparameters
             mode: dataset mode. One of {"train", "validation"}
         """
+        # TODO: hardcode
+        assert cfg.dataset.limit_chained_samples
+
         super().__init__(df=df, cfg=cfg, mode=mode)
         self.chosen_answers = (
             self.df[self.cfg.dataset.chosen_response_column].astype(str).values.tolist()
@@ -65,17 +65,20 @@ class CustomDataset(LLMCustomDataset):
     def __getitem__(self, idx: int) -> Dict:
         """Reads a single text observation."""
         sample = super().__getitem__(idx)
+        sample.pop("reward_model_prompt_text", None)
+        sample.pop("reward_model_prompt_text", None)
+
         idx = self.indices[idx]
         sample["chosen_answer_ids"] = self.encode(
             self.tokenizer,
             text=self.chosen_answers[idx],
-            max_length=self.cfg.dataset.max_length_answer,
+            max_length=self.cfg.tokenizer.max_length_answer,
             truncation_side="right",
         )
         sample["rejected_answer_ids"] = self.encode(
             self.tokenizer,
             text=self.rejected_answer[idx],
-            max_length=self.cfg.dataset.max_length_answer,
+            max_length=self.cfg.tokenizer.max_length_answer,
             truncation_side="right",
         )
         return sample
@@ -99,9 +102,9 @@ class CustomDataset(LLMCustomDataset):
 
     @staticmethod
     def clean_output(
-        output: Dict,
-        prompts: List[str],
-        cfg: Any,
+            output: Dict,
+            prompts: List[str],
+            cfg: Any,
     ):
         output["predicted_text"] = output["predicted_text"].tolist()
         for j in range(len(output["predicted_text"])):
@@ -140,7 +143,7 @@ class CustomDataset(LLMCustomDataset):
         return output
 
     def format_output(
-        self, cfg, df: pd.DataFrame, output: Dict
+            self, cfg, df: pd.DataFrame, output: Dict
     ) -> Tuple[Dict, pd.DataFrame]:
         output = {
             key: value
@@ -163,8 +166,3 @@ class CustomDataset(LLMCustomDataset):
             df[f"pred_{cfg.dataset.answer_column}"] = output["predicted_text"]
 
         return output, df
-
-
-if __name__ == "__main__":
-    df = pd.read_parquet("/home/max/PycharmProjects/h2o-llmstudio/data/hh.pq")
-    df.head()

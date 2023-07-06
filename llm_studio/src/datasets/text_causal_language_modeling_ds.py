@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from llm_studio.src.datasets.text_utils import get_texts, get_tokenizer
 
@@ -82,9 +83,14 @@ class CustomDataset(Dataset):
 
                 # limit chained samples to the longest chain
                 if self.cfg.dataset.limit_chained_samples:
-                    self.indices = self.indices[
-                        [id not in self.parent_ids for id in self.df["id"].values]
-                    ]
+                    # id of conversation is not a parent id to some other conversation
+                    is_end_of_conversation_ids = list(set(self.df["id"].values) - set(self.parent_ids))
+                    self.df["___index___"] = self.indices
+                    self.indices = self.df.loc[self.df['id'].isin(is_end_of_conversation_ids), "___index___"].to_list()
+                    del self.df["___index___"]
+                    if self.cfg.environment._local_rank == 0:
+                        logger.info(f"There are {len(self.indices)} full conversation trees,"
+                                    f"the raw DataFrame contains {len(self.df)} rows")
 
         if self.cfg.environment._local_rank == 0:
             logger.info(f"Sample prompt: {self.prompts[0]}")

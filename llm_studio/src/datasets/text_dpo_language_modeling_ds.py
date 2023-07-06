@@ -66,19 +66,18 @@ class CustomDataset(LLMCustomDataset):
         """Reads a single text observation."""
         sample = super().__getitem__(idx)
         idx = self.indices[idx]
-        chosen_answer_ids = self.encode(
+        sample["chosen_answer_ids"] = self.encode(
             self.tokenizer,
             text=self.chosen_answers[idx],
-            max_length=128,
+            max_length=self.cfg.dataset.max_length_answer,
             truncation_side="right",
         )
-        rejected_answer_ids = self.encode(
+        sample["rejected_answer_ids"] = self.encode(
             self.tokenizer,
-            text=self.chosen_answers[idx],
-            max_length=128,
+            text=self.rejected_answer[idx],
+            max_length=self.cfg.dataset.max_length_answer,
             truncation_side="right",
         )
-
         return sample
 
     def postprocess_batch_predictions(self, cfg: Any, output: Dict) -> Dict:

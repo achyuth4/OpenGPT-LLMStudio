@@ -6,7 +6,9 @@ import numpy as np
 import pandas as pd
 import torch
 
-from llm_studio.src.datasets.text_causal_language_modeling_ds import CustomDataset as LLMCustomDataset
+from llm_studio.src.datasets.text_causal_language_modeling_ds import (
+    CustomDataset as LLMCustomDataset,
+)
 from llm_studio.src.datasets.text_utils import get_texts, get_tokenizer
 
 logger = logging.getLogger(__name__)
@@ -50,100 +52,34 @@ class CustomDataset(LLMCustomDataset):
             cfg: config with all the hyperparameters
             mode: dataset mode. One of {"train", "validation"}
         """
-
-        self.cfg = cfg
-        self.mode = mode
-        self.df = df.copy()
-
-        assert self.mode in [
-            "train",
-            "validation",
-        ], f"There is no {self.mode} for the datasets"
-
-        self.tokenizer = get_tokenizer(cfg)
-        self.prompts = [self.parse_prompt(cfg, prompt)
-                        for prompt in get_texts(df, self.cfg, separator="")]
-        self.answers = (
-            self.df[self.cfg.dataset.answer_column].astype(str).values.tolist()
-        )
+        super().__init__(df=df, cfg=cfg, mode=mode)
         self.chosen_answers = (
             self.df[self.cfg.dataset.chosen_response_column].astype(str).values.tolist()
         )
         self.rejected_answer = (
-            self.df[self.cfg.dataset.rejected_response_column].astype(str).values.tolist()
+            self.df[self.cfg.dataset.rejected_response_column]
+            .astype(str)
+            .values.tolist()
         )
-
-        self.parent_ids = None
-        if self.cfg.dataset.parent_id_column != "None":
-            if "id" not in self.df.columns:
-                logger.warning(
-                    f"When using parent column, the dataframe requires an 'id' column. "
-                    f"Disabling functionality for mode {self.mode}."
-                )
-            else:
-                self.parent_ids = self.df[self.cfg.dataset.parent_id_column].values
-                self.df_id_to_idx = {v: k for k, v in enumerate(self.df["id"].values)}
-
-                # limit chained samples to the longest chain
-                if self.cfg.dataset.limit_chained_samples:
-                    self.indices = self.indices[
-                        [id not in self.parent_ids for id in self.df["id"].values]
-                    ]
-
-        if self.cfg.environment._local_rank == 0:
-            logger.info(f"Sample prompt: {self.prompts[0]}")
 
     def __getitem__(self, idx: int) -> Dict:
         """Reads a single text observation."""
-        sample = dict()
-        encodings = [self._get_prompt_and_answer_encoding(i) for i in self.get_id_chain(idx)]
-        assert encodings[-1][1] == []
-        input_ids = torch.cat([torch.cat(encoding) for encoding in encodings])
+        sample = super().__getitem__(idx)
+        idx = self.indices[idx]
+        chosen_answer_ids = self.encode(
+            self.tokenizer,
+            text=self.chosen_answers[idx],
+            max_length=128,
+            truncation_side="right",
+        )
+        rejected_answer_ids = self.encode(
+            self.tokenizer,
+            text=self.chosen_answers[idx],
+            max_length=128,
+            truncation_side="right",
+        )
 
-        ####
-        sample.update(
-            self.pad_tokens(
-                input_ids,
-                attention_mask=torch.ones_like(input_ids),
-                max_length=self.cfg.tokenizer.max_length,
-                pad_token_id=self.tokenizer.pad_token_id,
-            )
-        )
-        sample.update(
-            self.pad_tokens(
-                input_ids,
-                attention_mask=torch.ones_like(input_ids),
-                max_length=self.cfg.tokenizer.max_length_prompt,
-                pad_token_id=self.tokenizer.pad_token_id,
-                prefix="prompt_",
-            )
-        )
         return sample
-
-    def get_id_chain(self, idx):
-        id_chain = [idx]
-        if self.parent_ids is not None:
-            parent_idx = idx
-            while (
-                    parent_idx := self.df_id_to_idx.get(self.parent_ids[parent_idx], None)
-            ) is not None:
-                id_chain = [parent_idx] + id_chain
-        return id_chain
-
-    def __len__(self) -> int:
-        return len(self.indices)
-
-    @staticmethod
-    def get_input_columns(cfg: Any) -> Tuple[str, ...]:
-        """Assigns the input columns
-
-        Args:
-            cfg: config
-
-        """
-        if isinstance(cfg.dataset.prompt_column, tuple):
-            return cfg.dataset.prompt_column
-        return (cfg.dataset.prompt_column,)
 
     def postprocess_batch_predictions(self, cfg: Any, output: Dict) -> Dict:
         if cfg.prediction.metric == "Perplexity":
@@ -164,9 +100,9 @@ class CustomDataset(LLMCustomDataset):
 
     @staticmethod
     def clean_output(
-            output: Dict,
-            prompts: List[str],
-            cfg: Any,
+        output: Dict,
+        prompts: List[str],
+        cfg: Any,
     ):
         output["predicted_text"] = output["predicted_text"].tolist()
         for j in range(len(output["predicted_text"])):
@@ -205,7 +141,7 @@ class CustomDataset(LLMCustomDataset):
         return output
 
     def format_output(
-            self, cfg, df: pd.DataFrame, output: Dict
+        self, cfg, df: pd.DataFrame, output: Dict
     ) -> Tuple[Dict, pd.DataFrame]:
         output = {
             key: value
@@ -229,6 +165,7 @@ class CustomDataset(LLMCustomDataset):
 
         return output, df
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     df = pd.read_parquet("/home/max/PycharmProjects/h2o-llmstudio/data/hh.pq")
     df.head()

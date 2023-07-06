@@ -4,9 +4,16 @@ from typing import Any, Tuple
 
 import llm_studio.src.datasets.text_dpo_language_modeling_ds
 from llm_studio.python_configs.base import DefaultConfig
-from llm_studio.python_configs.text_causal_language_modeling_config import ConfigNLPCausalLMDataset, \
-    ConfigNLPCausalLMTokenizer, ConfigNLPCausalLMPrediction, ConfigNLPCausalLMEnvironment, ConfigNLPCausalLMLogging, \
-    ConfigNLPCausalLMTraining, ConfigNLPCausalLMArchitecture, ConfigNLPAugmentation
+from llm_studio.python_configs.text_causal_language_modeling_config import (
+    ConfigNLPAugmentation,
+    ConfigNLPCausalLMArchitecture,
+    ConfigNLPCausalLMDataset,
+    ConfigNLPCausalLMEnvironment,
+    ConfigNLPCausalLMLogging,
+    ConfigNLPCausalLMPrediction,
+    ConfigNLPCausalLMTokenizer,
+    ConfigNLPCausalLMTraining,
+)
 from llm_studio.src import possible_values
 from llm_studio.src.losses import text_causal_language_modeling_losses
 from llm_studio.src.models import text_causal_language_modeling_model

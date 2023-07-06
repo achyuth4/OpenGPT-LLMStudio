@@ -102,9 +102,9 @@ class CustomDataset(LLMCustomDataset):
 
     @staticmethod
     def clean_output(
-            output: Dict,
-            prompts: List[str],
-            cfg: Any,
+        output: Dict,
+        prompts: List[str],
+        cfg: Any,
     ):
         output["predicted_text"] = output["predicted_text"].tolist()
         for j in range(len(output["predicted_text"])):
@@ -143,7 +143,7 @@ class CustomDataset(LLMCustomDataset):
         return output
 
     def format_output(
-            self, cfg, df: pd.DataFrame, output: Dict
+        self, cfg, df: pd.DataFrame, output: Dict
     ) -> Tuple[Dict, pd.DataFrame]:
         output = {
             key: value

@@ -2,25 +2,24 @@
 <p align="center"><img src="app_utils/static/llm-studio-logo.png#gh-light-mode-only"></p>
 
 <h3 align="center">
-    <p>Welcome to H2O LLM Studio, a framework and no-code GUI designed for<br />
+    <p>Welcome to AchyuthGPT LLM Studio, a framework and no-code GUI designed for<br />
     fine-tuning state-of-the-art large language models (LLMs).
 </p>
 </h3>
 
-<a href="https://user-images.githubusercontent.com/1069138/233859311-32aa1f8c-4d68-47ac-8cd9-9313171ff9f9.png"><img width="50%" alt="home" src="https://user-images.githubusercontent.com/1069138/233859311-32aa1f8c-4d68-47ac-8cd9-9313171ff9f9.png"></a><a href="https://user-images.githubusercontent.com/1069138/233859315-e6928aa7-28d2-420b-8366-bc7323c368ca.png"><img width="50%" alt="logs" src="https://user-images.githubusercontent.com/1069138/233859315-e6928aa7-28d2-420b-8366-bc7323c368ca.png"></a>
 
 ## Jump to
 
-- [With H2O LLM Studio, you can](#with-h2o-llm-studio-you-can)
+- [With Achyuth LLM Studio, you can](#with-achyuth-llm-studio-you-can)
 - [Quickstart](#quickstart)
 - [What's New](#whats-new)
 - [Setup](#setup)
   - [Recommended Install](#recommended-install)
   - [Using requirements.txt](#using-requirementstxt)
-- [Run H2O LLM Studio GUI](#run-h2o-llm-studio-gui)
-- [Run H2O LLM Studio GUI using Docker from a nightly build](#run-h2o-llm-studio-gui-using-docker-from-a-nightly-build)
-- [Run H2O LLM Studio GUI by building your own Docker image](#run-h2o-llm-studio-gui-by-building-your-own-docker-image)
-- [Run H2O LLM Studio with command line interface (CLI)](#run-h2o-llm-studio-with-command-line-interface-cli)
+- [Run achyuth LLM Studio GUI](#run-achyuth-llm-studio-gui)
+- [Run achyuth LLM Studio GUI using Docker from a nightly build](#run-achyuth-llm-studio-gui-using-docker-from-a-nightly-build)
+- [Run achyuth LLM Studio GUI by building your own Docker image](#run-achyuth-llm-studio-gui-by-building-your-own-docker-image)
+- [Run achyuth LLM Studio with command line interface (CLI)](#run-achyuth-llm-studio-with-command-line-interface-cli)
 - [Data Format](#data-format)
 - [Training your model](#training-your-model)
   - [Starting an experiment](#starting-an-experiment)
@@ -33,7 +32,7 @@
 - [Documentation](#documentation)
 - [License](#license)
 
-## With H2O LLM Studio, you can
+## With AchyuthGPT LLM Studio, you can
 
 - easily and effectively fine-tune LLMs **without the need for any coding experience**.
 - use a **graphic user interface (GUI)** specially designed for large language models.
@@ -57,19 +56,19 @@ Using CLI for fine-tuning LLMs:
 
 ## What's New
 
-- [PR 152](https://github.com/h2oai/h2o-llmstudio/pull/152) Add RLHF functionality for fine-tuning LLMs.
-- [PR 132](https://github.com/h2oai/h2o-llmstudio/pull/131) Add 4bit training that allows training of larger LLM backbones with less GPU memory. See [here](https://huggingface.co/blog/4bit-transformers-bitsandbytes) for a comprehensive summary of this method.
-- [PR 40](https://github.com/h2oai/h2o-llmstudio/pull/40) Added functionality for supporting nested conversations in data. A new `parent_id_column` can be selected for datasets to support tree-like structures in your conversational data. Additional `augmentation` settings have been added for this feature.
+- [PR 152](https://github.com/achyuth4/AchyuthGPT-llmstudio/pull/152) Add RLHF functionality for fine-tuning LLMs.
+- [PR 132](https://github.com/achyuth4/AchyuthGPT-llmstudio/pull/131) Add 4bit training that allows training of larger LLM backbones with less GPU memory. See [here](https://huggingface.co/blog/4bit-transformers-bitsandbytes) for a comprehensive summary of this method.
+- [PR 40](https://github.com/achyuth4/AchyuthGPT-llmstudio/pull/40) Added functionality for supporting nested conversations in data. A new `parent_id_column` can be selected for datasets to support tree-like structures in your conversational data. Additional `augmentation` settings have been added for this feature.
 
 Please note that due to current rapid development we cannot guarantee full backwards compatibility of new functionality. We thus recommend to pin the version of the framework to the one you used for your experiments. For resetting, please delete/backup your `data` and `output` folders.
 
 ## Setup
 
-H2O LLM Studio requires a machine with Ubuntu 16.04+ and at least one recent Nvidia GPU with Nvidia drivers version >= 470.57.02. For larger models, we recommend at least 24GB of GPU memory.
+AchyuthGPT LLM Studio requires a machine with Ubuntu 16.04+ and at least one recent Nvidia GPU with Nvidia drivers version >= 470.57.02. For larger models, we recommend at least 24GB of GPU memory.
 
 ### Recommended Install
 
-The recommended way to install H2O LLM Studio is using pipenv with Python 3.10. To install Python 3.10 on Ubuntu 16.04+, execute the following commands:
+The recommended way to install AchyuthGPT LLM Studio is using pipenv with Python 3.10. To install Python 3.10 on Ubuntu 16.04+, execute the following commands:
 
 #### System installs (Python 3.10)
 
@@ -110,15 +109,15 @@ If you wish to use conda or another virtual environment, you can also install th
 pip install -r requirements.txt
 ```
 
-## Run H2O LLM Studio GUI
+## Run AchyuthGPT LLM Studio GUI
 
-You can start H2O LLM Studio using the following command:
+You can start AchyuthGPT LLM Studio using the following command:
 
 ```bash
 make wave
 ```
 
-This command will start the [H2O wave](https://github.com/h2oai/wave) server and app.
+This command will start the [AchyuthGPT wave](https://github.com/h2oai/wave) server and app.
 Navigate to <http://localhost:10101/> (we recommend using Chrome) to access H2O LLM Studio and start fine-tuning your models!
 
 If you are running H2O LLM Studio with a custom environment other than Pipenv, you need to start the app as follows:
@@ -133,7 +132,7 @@ wave run app
 ## Run H2O LLM Studio GUI using Docker from a nightly build
 
 Install Docker first by following instructions from [NVIDIA Containers](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker).
-H2O LLM Studio images are stored in the h2oai GCR vorvan container repository.
+AchyuthGPT LLM Studio images are stored in the achyuthgpt GCR vorvan container repository.
 
 ```bash
 mkdir -p `pwd`/data
@@ -151,11 +150,11 @@ docker run \
     gcr.io/vorvan/h2oai/h2o-llmstudio:nightly
 ```
 
-Navigate to <http://localhost:10101/> (we recommend using Chrome) to access H2O LLM Studio and start fine-tuning your models!
+Navigate to <http://localhost:10101/> (we recommend using Chrome) to access AchyuthGPT LLM Studio and start fine-tuning your models!
 
 (Note other helpful docker commands are `docker ps` and `docker kill`.)
 
-## Run H2O LLM Studio GUI by building your own Docker image
+## Run AchyuthGPT LLM Studio GUI by building your own Docker image
 
 ```bash
 docker build -t h2o-llmstudio .
@@ -172,9 +171,9 @@ docker run \
     h2o-llmstudio
 ```
 
-## Run H2O LLM Studio with command line interface (CLI)
+## Run AchyuthGPT LLM Studio with command line interface (CLI)
 
-You can also use H2O LLM Studio with the command line interface (CLI) and specify the configuration file that contains all the experiment parameters. To finetune using H2O LLM Studio with CLI, activate the pipenv environment by running `make shell`, and then use the following command:
+You can also use AchyuthGPT LLM Studio with the command line interface (CLI) and specify the configuration file that contains all the experiment parameters. To finetune using H2O LLM Studio with CLI, activate the pipenv environment by running `make shell`, and then use the following command:
 
 ```bash
 python train.py -C {path_to_config_file}
@@ -199,7 +198,7 @@ The interactive chat will also work with model that were finetuned using the UI.
 
 ## Data Format
 
-H2O LLM studio expects a csv file with at least two columns, one being the instruct column, the other being the answer that the model should generate. You can also provide an extra validation dataframe using the same format or use an automatic train/validation split to evaluate the model performance.
+AchyuthGPT LLM studio expects a csv file with at least two columns, one being the instruct column, the other being the answer that the model should generate. You can also provide an extra validation dataframe using the same format or use an automatic train/validation split to evaluate the model performance.
 
 During an experiment you can adapt the data representation with the following settings
 
@@ -214,11 +213,11 @@ that can be downloaded [here](https://www.kaggle.com/code/philippsinger/openassi
 
 ## Training your model
 
-With H2O LLM Studio, training your large language model is easy and intuitive. First, upload your dataset and then start training your model.
+With AchyuthGPT LLM Studio, training your large language model is easy and intuitive. First, upload your dataset and then start training your model.
 
 ### Starting an experiment
 
-H2O LLM Studio allows to tune a variety of parameters and enables fast iterations to be able to explore different hyperparameters easily.
+AchyuthGPT LLM Studio allows to tune a variety of parameters and enables fast iterations to be able to explore different hyperparameters easily.
 The default settings are chosen with care and should give a good baseline. The most important parameters are:
 
 - **LLM Backbone**: This parameter determines the LLM architecture to use.
@@ -310,7 +309,7 @@ python prompt.py -e examples/output_oasst1
 
 ## Model checkpoints
 
-All open-source datasets and models are posted on [H2O.ai's Hugging Face page](https://huggingface.co/h2oai/) and our [H2OGPT](https://github.com/h2oai/h2ogpt) repository.
+All open-source datasets and models are posted on [AchyuthGPT's Hugging Face page](https://huggingface.co/AchyuthGamer/) and our [AchyuthGPT](https://github.com/achyuth4/AchyuthGPT) repository.
 
 ## FAQ
 
@@ -328,7 +327,7 @@ To train a chatbot style model, you need to convert your data into a question an
 
 If you really want to continue pretraining on your own data without teaching a question answering style, prepare a dataset with all your data in a single column Dataframe. Make sure that the length of the text in each row is not too long. In the experiment setup, remove all additional tokens (e.g. `<|prompt|>`, `<|answer|>`, for `Text Prompt Start` and `Text Answer Start` respectively) and disable `Add Eos Token To Prompt` and `Add Eos Token To Answer`. Deselect everything in the `Prompt Column`.
 
-Your setup should look like [this](https://github.com/h2oai/h2o-llmstudio/assets/1069138/316c380d-76e4-4264-a64e-8ae9be893e76).
+Your setup should look like [this](https://github.com/achyuth4/AchyuthGPT-llmstudio/assets/1069138/316c380d-76e4-4264-a64e-8ae9be893e76).
 
 > ❓ I encounter GPU out-of-memory issues. What can I change to be able to train large models?
 
@@ -336,32 +335,32 @@ There are various parameters that can be tuned while keeping a specific LLM back
 It is advised to choose 4bit/8bit precision as a backbone dtype to be able to train models >=7B on a consumer type GPU.
 LORA should be enabled. Besides that there are the usual parameters such as batch size and maximum sequence length that can be decreased to save GPU memory (please ensure that your prompt+answer text is not truncated too much by checking the train data insights).
 
-> ❓ Where does H2O LLM Studio store its data?
+> ❓ Where does AchyuthGPT LLM Studio store its data?
 
-H2O LLM Studio stores its data in two folders located in the root directory. The folders are named `data` and `output`. Here is the breakdown of the data storage structure:
+AchyuthGPT LLM Studio stores its data in two folders located in the root directory. The folders are named `data` and `output`. Here is the breakdown of the data storage structure:
 
 - `data/dbs`: This folder contains the user database used within the app.
 - `data/user`: This folder is where uploaded datasets from the user are stored.
-- `output/user`: All experiments conducted in H2O LLM Studio are stored in this folder. For each experiment, a separate folder is created within the `output/user` directory, which contains all the relevant data associated with that particular experiment.
+- `output/user`: All experiments conducted in AchyuthGPT LLM Studio are stored in this folder. For each experiment, a separate folder is created within the `output/user` directory, which contains all the relevant data associated with that particular experiment.
 - `output/download`: Utility folder that is used to store data the user downloads within the app.
 
 It is possible to change the default folders `data` and `output` in [app_utils/config.py](app_utils/config.py) (change `data_folder` and `output_folder`). Or set `LLM_STUDIO_DATA_FOLDER` and `LLM_STUDIO_OUTPUT_FOLDER` environment variables.
 
-> ❓ How can I update H2O LLM Studio?
+> ❓ How can I update AchyuthGPT LLM Studio?
 
-To update H2O LLM Studio, you have two options:
+To update AchyuthGPT LLM Studio, you have two options:
 
 1. Using the latest main branch: Execute the commands `git checkout main` and `git pull` to obtain the latest updates from the main branch.
 2. Using the latest release tag: Execute the commands `git pull` and `git checkout v0.0.3` (replace 'v0.0.3' with the desired version number) to switch to the latest release branch.
 
-The update process does not remove or erase any existing data folders or experiment records. This means that all your old data, including the user database, uploaded datasets, and experiment results, will still be available to you within the updated version of H2O LLM Studio.
+The update process does not remove or erase any existing data folders or experiment records. This means that all your old data, including the user database, uploaded datasets, and experiment results, will still be available to you within the updated version of AchyuthGPT LLM Studio.
 
 Before updating, we recommend running the command `git rev-parse --short HEAD` and saving the commit hash. This will allow you to revert to your existing version if needed.
 
 ## Documentation
 
-Detailed documentation for H2O LLM Studio can be found at <https://docs.h2o.ai/h2o-llmstudio/>. If you wish to contribute to the docs, navigate to the `/documentation` folder of this repo and refer to the [README.md](documentation/README.md) for more information.
+Detailed documentation for AchyuthGPT LLM Studio can be found at <https://docs.achyuthgpt.ai/achyuthgpt-llmstudio/>. If you wish to contribute to the docs, navigate to the `/documentation` folder of this repo and refer to the [README.md](documentation/README.md) for more information.
 
 ## License
 
-H2O LLM Studio is licensed under the Apache 2.0 license. Please see the [LICENSE](LICENSE) file for more information.
+AchyuthGPT LLM Studio is licensed under the Apache 2.0 license. Please see the [LICENSE](LICENSE) file for more information.
